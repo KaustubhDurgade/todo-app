@@ -1,0 +1,15 @@
+Wirte a REST API in python with flask 
+It should have following 6 endpoints
+1. GET /todos → Retrieve all tasks
+2. GET /todos/{id} → Retrieve a specific task
+3. POST /todos → Create a new task
+4. PUT /todos/{id} → Update a task
+5. DELETE /todos/{id} → Delete a task
+6. A swagger doc serving endpoint 
+It should save all the tasks in local squlite database file
+There should be swagger metadata for each endpoint so that dynamic swagger documentation can be generated
+We also want a Makefile with various useful targets including a help target which will display help for each target
+make run should first generate the swagger doc and then run the program
+Please make sure the program is split into smaller, easy to understand (at a first glance) modules.
+Please also include unit tests as well.
+Please add appropriate logging
