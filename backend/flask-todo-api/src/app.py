@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_restx import Api
+from flask_cors import CORS
 from src.routes.todos import api as todos_ns
 from src.database.db import db_session, init_db
 
@@ -28,6 +29,10 @@ def setup_logging(app):
 
 def create_app():
     app = Flask(__name__)
+    
+    # Enable CORS for all routes
+    CORS(app)
+    
     setup_logging(app)  # Initialize logging
     
     api = Api(
