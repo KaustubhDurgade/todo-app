@@ -1,9 +1,9 @@
 from flask import request, current_app
 from flask_restx import Namespace, Resource, fields
 import marshmallow
-from src.database.db import db_session
-from src.models.todo import Todo
-from src.schemas.todo import TodoSchema
+from ..database.db import db_session
+from ..models.todo import Todo
+from ..schemas.todo import TodoSchema
 
 api = Namespace('todos', description='Todo operations', path='/todos')
 

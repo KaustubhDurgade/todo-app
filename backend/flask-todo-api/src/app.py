@@ -4,8 +4,8 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_restx import Api
 from flask_cors import CORS
-from src.routes.todos import api as todos_ns
-from src.database.db import db_session, init_db
+from .routes.todos import api as todos_ns
+from .database.db import db_session, init_db
 
 def setup_logging(app):
     """Configure application logging"""
@@ -58,4 +58,4 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5002)

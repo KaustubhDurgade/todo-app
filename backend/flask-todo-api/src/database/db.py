@@ -31,7 +31,7 @@ def setup_session_events():
 def init_db():
     """Initialize the database schema"""
     logger.info('Initializing database schema')
-    import src.models.todo
+    from ..models import todo
     Base.metadata.create_all(bind=engine)
     setup_session_events()
     logger.info('Database schema created successfully')

@@ -1,5 +1,5 @@
 from marshmallow import Schema, fields, validate, post_load, EXCLUDE
-from src.models.todo import Todo
+from ..models.todo import Todo
 
 class TodoSchema(Schema):
     id = fields.Int(dump_only=True)
