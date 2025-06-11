@@ -29,6 +29,7 @@ function App() {
     height: window.innerHeight 
   });
   const [showDebugMode, setShowDebugMode] = useState(false);
+  const [updatingTodoId, setUpdatingTodoId] = useState<number | null>(null);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -54,15 +55,25 @@ function App() {
       const todoWidth = Math.max(200, Math.min(350, windowSize.width * 0.25));
       const todoHeight = Math.max(100, Math.min(200, windowSize.height * 0.15));
       
-      // Convert to floating todos with random positions if they don't have positions
-      const floatingTodos: FloatingTodo[] = data.map((todo: Todo, index: number) => ({
-        ...todo,
-        position: todo.position || {
-          x: Math.random() * (windowSize.width - todoWidth) + 50,
-          y: Math.random() * (windowSize.height - todoHeight) + 50
-        },
-        zIndex: 1000 + index
-      }));
+      // Convert to floating todos with positions from backend or random if not set
+      const floatingTodos: FloatingTodo[] = data.map((todo: any, index: number) => {
+        // Use backend position if available, otherwise generate random position
+        let position;
+        if (todo.position_x !== null && todo.position_y !== null) {
+          position = { x: todo.position_x, y: todo.position_y };
+        } else {
+          position = {
+            x: Math.random() * (windowSize.width - todoWidth) + 50,
+            y: Math.random() * (windowSize.height - todoHeight) + 50
+          };
+        }
+        
+        return {
+          ...todo,
+          position,
+          zIndex: 1000 + index
+        };
+      });
       
       setTodos(floatingTodos);
     } catch (error) {
@@ -93,6 +104,9 @@ function App() {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
 
+    // Set updating state for visual feedback
+    setUpdatingTodoId(id);
+
     try {
       const response = await fetch(`${API_BASE_URL}${id}`, {
         method: 'PUT',
@@ -102,6 +116,8 @@ function App() {
         body: JSON.stringify({
           ...todo,
           completed: !todo.completed,
+          position_x: todo.position.x,
+          position_y: todo.position.y,
         }),
       });
 
@@ -110,9 +126,18 @@ function App() {
       }
 
       const updatedTodo = await response.json();
-      setTodos(todos.map(t => t.id === id ? updatedTodo : t));
+      
+      // Preserve position and zIndex data when updating
+      setTodos(todos.map(t => t.id === id ? {
+        ...updatedTodo,
+        position: t.position, // Keep original position
+        zIndex: t.zIndex      // Keep original zIndex
+      } : t));
     } catch (error) {
       console.error('Failed to toggle todo:', error);
+    } finally {
+      // Clear updating state
+      setUpdatingTodoId(null);
     }
   };
 
@@ -120,10 +145,10 @@ function App() {
   const handleMouseDown = (event: React.MouseEvent, todo: FloatingTodo) => {
     if (!todo.id) return;
     
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    // Calculate offset based on current todo position and mouse position
     setDragOffset({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top
+      x: event.clientX - todo.position.x,
+      y: event.clientY - todo.position.y
     });
     setSelectedTodoId(todo.id);
     setIsDragging(true);
@@ -141,16 +166,23 @@ function App() {
   const handleMouseMove = (event: MouseEvent) => {
     if (!isDragging || !selectedTodoId) return;
     
-    const dimensions = getTodoDimensions();
+    // Get current window dimensions directly from the DOM
+    const currentWindowWidth = window.innerWidth;
+    const currentWindowHeight = window.innerHeight;
+    
+    // Calculate fresh dimensions for this drag operation
+    const todoWidth = Math.max(200, Math.min(350, currentWindowWidth * 0.25));
+    const todoHeight = Math.max(100, Math.min(200, currentWindowHeight * 0.15));
+    
     const newPosition = {
       x: event.clientX - dragOffset.x,
       y: event.clientY - dragOffset.y
     };
     
-    // Keep within screen bounds using dynamic dimensions
+    // Keep within screen bounds using fresh dimensions
     const boundedPosition = {
-      x: Math.max(0, Math.min(windowSize.width - dimensions.width, newPosition.x)),
-      y: Math.max(0, Math.min(windowSize.height - dimensions.height, newPosition.y))
+      x: Math.max(0, Math.min(currentWindowWidth - todoWidth, newPosition.x)),
+      y: Math.max(0, Math.min(currentWindowHeight - todoHeight, newPosition.y))
     };
     
     setTodos(prev => prev.map(todo => 
@@ -161,8 +193,37 @@ function App() {
   };
 
   const handleMouseUp = () => {
+    // Save position to backend if we were dragging
+    if (isDragging && selectedTodoId) {
+      const todo = todos.find(t => t.id === selectedTodoId);
+      if (todo) {
+        updateTodoPosition(selectedTodoId, todo.position);
+      }
+    }
+    
     setIsDragging(false);
     setSelectedTodoId(null);
+  };
+
+  const updateTodoPosition = async (id: number, position: { x: number; y: number }) => {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+
+    try {
+      await fetch(`${API_BASE_URL}${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...todo,
+          position_x: position.x,
+          position_y: position.y,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to update todo position:', error);
+    }
   };
 
   const handleDoubleClick = async (todo: FloatingTodo) => {
@@ -213,13 +274,16 @@ function App() {
           !(event.target as HTMLElement).matches('input, textarea')) {
         event.preventDefault();
         
-        // Find the todo with the highest z-index (most recent/top-most)
-        const topTodo = todos.reduce((prev, current) => 
-          (current.zIndex || 0) > (prev.zIndex || 0) ? current : prev
-        );
-        
-        if (topTodo.id) {
-          toggleTodo(topTodo.id);
+        // Only proceed if there are todos
+        if (todos.length > 0) {
+          // Find the todo with the highest z-index (most recent/top-most)
+          const topTodo = todos.reduce((prev, current) => 
+            (current.zIndex || 0) > (prev.zIndex || 0) ? current : prev
+          );
+          
+          if (topTodo.id) {
+            toggleTodo(topTodo.id);
+          }
         }
       }
       
@@ -287,6 +351,13 @@ function App() {
     if (!modalTitle.trim()) return;
 
     try {
+      // Create floating todo at modal position using dynamic dimensions
+      const dimensions = getTodoDimensions();
+      const newPosition = {
+        x: Math.max(0, Math.min(windowSize.width - dimensions.width, modalPosition.x - dimensions.width/2)),
+        y: Math.max(0, Math.min(windowSize.height - dimensions.height, modalPosition.y + 50))
+      };
+
       const response = await fetch(API_BASE_URL, {
         method: 'POST',
         headers: {
@@ -296,6 +367,8 @@ function App() {
           title: modalTitle,
           description: modalDescription,
           completed: false,
+          position_x: newPosition.x,
+          position_y: newPosition.y,
         }),
       });
 
@@ -305,14 +378,9 @@ function App() {
 
       const newTodo = await response.json();
       
-      // Create floating todo at modal position using dynamic dimensions
-      const dimensions = getTodoDimensions();
       const newFloatingTodo: FloatingTodo = {
         ...newTodo,
-        position: {
-          x: Math.max(0, Math.min(windowSize.width - dimensions.width, modalPosition.x - dimensions.width/2)),
-          y: Math.max(0, Math.min(windowSize.height - dimensions.height, modalPosition.y + 50))
-        },
+        position: newPosition,
         zIndex: highestZIndex + 1
       };
       
@@ -372,7 +440,7 @@ function App() {
         return (
           <div
             key={todo.id}
-            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''}`}
+            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''}`}
             style={{
               left: todo.position.x,
               top: todo.position.y,
@@ -398,13 +466,21 @@ function App() {
             
             {/* Debug rectangle */}
             {showDebugMode && (
-              <div 
-                className="debug-rectangle"
-                style={{
-                  width: dimensions.width,
-                  height: dimensions.height
-                }}
-              />
+              <>
+                <div 
+                  className="debug-rectangle"
+                  style={{
+                    width: dimensions.width,
+                    height: dimensions.height
+                  }}
+                />
+                <div className="debug-coordinates">
+                  ID: {todo.id}<br/>
+                  X: {Math.round(todo.position.x)}<br/>
+                  Y: {Math.round(todo.position.y)}<br/>
+                  Z: {todo.zIndex}
+                </div>
+              </>
             )}
           </div>
         );

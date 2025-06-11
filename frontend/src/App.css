@@ -130,7 +130,6 @@ body {
   transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
   user-select: none;
   overflow: hidden;
-  position: relative;
   box-sizing: border-box;
 }
 
@@ -150,6 +149,13 @@ body {
     0 16px 48px rgba(0, 150, 255, 0.2),
     0 6px 16px rgba(0, 100, 200, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(100, 180, 255, 0.4);
+}
+
+.floating-todo.updating {
+  transform: scale(1.05);
+  opacity: 0.8;
+  transition: all 0.2s ease;
   border-color: rgba(100, 180, 255, 0.4);
 }
 
@@ -334,6 +340,21 @@ body {
   box-sizing: border-box;
 }
 
+.debug-coordinates {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: rgba(255, 0, 0, 0.8);
+  color: white;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: monospace;
+  line-height: 1.2;
+  z-index: 999999;
+  pointer-events: none;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .floating-todo {
@@ -387,7 +408,7 @@ body {
     rgba(0, 150, 255, 0.05) 0%, 
     rgba(0, 150, 255, 0.02) 50%, 
     transparent 100%);
-  z-index: 998;
+  z-index: 10000;
   pointer-events: none;
   animation: energyPulse 3s ease-in-out infinite;
 }
@@ -410,7 +431,7 @@ body {
   right: 0;
   bottom: 0;
   backdrop-filter: blur(8px) saturate(1.2);
-  z-index: 1000;
+  z-index: 10001;
   animation: fadeInAero 0.3s ease-out;
   cursor: none;
 }
@@ -435,7 +456,7 @@ body {
   height: 56px;
   padding: 0;
   animation: slideInAero 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-  z-index: 1001;
+  z-index: 10002;
   cursor: none;
   display: flex;
   align-items: center;

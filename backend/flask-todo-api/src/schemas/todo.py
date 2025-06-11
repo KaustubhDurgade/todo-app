@@ -6,6 +6,8 @@ class TodoSchema(Schema):
     title = fields.Str(required=True, validate=validate.Length(min=1))
     description = fields.Str(required=False, validate=validate.Length(max=500))
     completed = fields.Boolean(load_default=False)
+    position_x = fields.Float(required=False, allow_none=True)
+    position_y = fields.Float(required=False, allow_none=True)
 
     class Meta:
         ordered = True

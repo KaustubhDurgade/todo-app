@@ -12,7 +12,9 @@ todo_model = api.model('Todo', {
     'id': fields.Integer(readonly=True, description='The task unique identifier'),
     'title': fields.String(required=True, description='The task title'),
     'description': fields.String(description='The task description'),
-    'completed': fields.Boolean(default=False, description='The task completion status')
+    'completed': fields.Boolean(default=False, description='The task completion status'),
+    'position_x': fields.Float(description='The task X position on screen'),
+    'position_y': fields.Float(description='The task Y position on screen')
 })
 
 todo_schema = TodoSchema()
@@ -88,6 +90,10 @@ class TodoItem(Resource):
             todo.description = update_data['description']
         if 'completed' in update_data:
             todo.completed = update_data['completed']
+        if 'position_x' in update_data:
+            todo.position_x = update_data['position_x']
+        if 'position_y' in update_data:
+            todo.position_y = update_data['position_y']
         
         db_session.commit()
         current_app.logger.info(f'Successfully updated todo {id}')
