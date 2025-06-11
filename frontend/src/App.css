@@ -17,6 +17,8 @@ body {
   color: rgba(0, 80, 120, 0.9);
   line-height: 1.4;
   min-height: 100vh;
+  overflow: hidden; /* Hide scrollbars for floating interface */
+  cursor: default; /* Default cursor for better UX */
 }
 
 /* Ambient Water Effect - Ultra Subtle */
@@ -79,112 +81,288 @@ body {
 
 .app {
   min-height: 100vh;
-  padding: 20px;
-  display: flex;
-  justify-content: center;
+  width: 100vw;
+  position: relative;
+  overflow: hidden;
 }
 
-.container {
-  width: 100%;
-  max-width: 600px;
-  margin-top: 40px;
+.loading {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 16px;
+  color: rgba(0, 80, 120, 0.7);
+  padding: 40px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(245, 252, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.8) 100%);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(100, 180, 255, 0.15);
+  border-radius: 20px;
+  box-shadow: 
+    0 8px 32px rgba(0, 150, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* Floating Todo Styles - Frutiger Aero Glass Aesthetic */
+.floating-todo {
+  position: fixed;
+  /* Remove fixed width to allow dynamic sizing */
+  min-height: 120px;
+  padding: 20px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(245, 252, 255, 0.9) 25%,
+    rgba(235, 248, 255, 0.92) 50%,
+    rgba(245, 252, 255, 0.9) 75%,
+    rgba(255, 255, 255, 0.95) 100%);
+  backdrop-filter: blur(12px) saturate(1.3);
+  border: 1px solid rgba(100, 180, 255, 0.2);
+  border-radius: 20px;
+  box-shadow: 
+    0 8px 32px rgba(0, 150, 255, 0.1),
+    0 2px 8px rgba(0, 100, 200, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  cursor: grab;
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  user-select: none;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.floating-todo:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 40px rgba(0, 150, 255, 0.15),
+    0 4px 12px rgba(0, 100, 200, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border-color: rgba(100, 180, 255, 0.3);
+}
+
+.floating-todo.dragging {
+  cursor: grabbing;
+  transform: rotate(2deg) scale(1.02);
+  box-shadow: 
+    0 16px 48px rgba(0, 150, 255, 0.2),
+    0 6px 16px rgba(0, 100, 200, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(100, 180, 255, 0.4);
+}
+
+.floating-todo.completed {
+  opacity: 0.7;
+  background: linear-gradient(135deg, 
+    rgba(240, 255, 240, 0.9) 0%,
+    rgba(235, 252, 235, 0.85) 25%,
+    rgba(230, 248, 230, 0.88) 50%,
+    rgba(235, 252, 235, 0.85) 75%,
+    rgba(240, 255, 240, 0.9) 100%);
+  border-color: rgba(100, 200, 100, 0.25);
+}
+
+.floating-todo.completed:hover {
+  border-color: rgba(100, 200, 100, 0.35);
+}
+
+.floating-todo-content {
   position: relative;
   z-index: 2;
 }
 
-.loading {
-  text-align: center;
-  font-size: 14px;
-  color: #999;
-  padding: 40px;
+.floating-todo-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(0, 80, 120, 0.95);
+  line-height: 1.4;
+  margin-bottom: 8px;
+  word-wrap: break-word;
 }
 
-.todos {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.empty-state {
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  padding: 60px 20px;
-  font-style: italic;
-}
-
-.todo-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-}
-
-.todo-item:hover {
-  border-color: #ddd;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.todo-item.completed {
-  opacity: 0.6;
-  background: #fafafa;
-}
-
-.todo-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.todo-title {
-  font-size: 14px;
-  color: #333;
-  word-break: break-word;
-}
-
-.todo-item.completed .todo-title {
+.floating-todo.completed .floating-todo-title {
   text-decoration: line-through;
-  color: #999;
+  color: rgba(0, 120, 80, 0.7);
 }
 
-.todo-actions {
-  display: flex;
-  gap: 4px;
-  margin-left: 12px;
+.floating-todo-description {
+  font-size: 13px;
+  color: rgba(0, 80, 120, 0.7);
+  line-height: 1.5;
+  word-wrap: break-word;
 }
 
-.toggle-btn,
-.delete-btn {
-  background: none;
-  border: none;
+.floating-todo.completed .floating-todo-description {
+  color: rgba(0, 120, 80, 0.5);
+}
+
+/* Glass shimmer effect */
+.floating-todo-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, 
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    rgba(0, 150, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.1) 70%,
+    transparent 100%);
+  border-radius: 20px;
+  pointer-events: none;
+  animation: shimmer 4s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+.floating-todo:hover .floating-todo-shimmer {
+  animation-duration: 2s;
+  opacity: 0.8;
+}
+
+/* Completion indicator */
+.completion-indicator {
+  position: absolute;
+  top: 15px;
+  right: 15px;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
-  cursor: pointer;
+  background: linear-gradient(135deg, 
+    rgba(100, 200, 100, 0.9) 0%,
+    rgba(80, 180, 80, 0.95) 100%);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 
+    0 2px 8px rgba(100, 200, 100, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  animation: completionPulse 2s ease-in-out infinite;
+}
+
+/* Floating empty state */
+.floating-empty-state {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 100;
+}
+
+.empty-state-content {
+  padding: 40px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(245, 252, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.8) 100%);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(100, 180, 255, 0.15);
+  border-radius: 25px;
+  box-shadow: 
+    0 12px 40px rgba(0, 150, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.empty-state-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(0, 80, 120, 0.9);
+  margin-bottom: 8px;
+}
+
+.empty-state-subtitle {
   font-size: 14px;
-  transition: all 0.2s ease;
-  color: #666;
+  color: rgba(0, 80, 120, 0.7);
+  margin-bottom: 6px;
 }
 
-.toggle-btn:hover {
-  background: #f0f9ff;
-  color: #0ea5e9;
+.empty-state-hint {
+  font-size: 12px;
+  color: rgba(0, 80, 120, 0.5);
+  font-style: italic;
 }
 
-.delete-btn:hover {
-  background: #fef2f2;
-  color: #ef4444;
+/* Animations */
+@keyframes completionPulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
 }
 
-.toggle-btn:active,
-.delete-btn:active {
-  transform: scale(0.95);
+@keyframes shimmer {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(200%) rotate(45deg); }
+}
+
+/* Debug Styles */
+.debug-info {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  background: rgba(255, 0, 0, 0.9);
+  color: white;
+  padding: 10px;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  z-index: 10000;
+  line-height: 1.4;
+}
+
+.debug-info div {
+  margin-bottom: 2px;
+}
+
+.debug-rectangle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 2px solid red;
+  pointer-events: none;
+  z-index: 999999;
+  box-sizing: border-box;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .floating-todo {
+    padding: 15px;
+    border-radius: 15px;
+  }
+  
+  .floating-todo-title {
+    font-size: 14px;
+  }
+  
+  .floating-todo-description {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-todo {
+    padding: 12px;
+    border-radius: 12px;
+  }
+  
+  .floating-todo-title {
+    font-size: 13px;
+  }
+  
+  .floating-todo-description {
+    font-size: 11px;
+  }
 }
 
 /* Minimal Modal Styles - Frutiger Aero Liquid Glass */
