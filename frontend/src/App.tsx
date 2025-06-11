@@ -6,13 +6,30 @@ interface Todo {
   title: string;
   description?: string;
   completed: boolean;
+  position?: { x: number; y: number };
+}
+
+interface FloatingTodo extends Todo {
+  position: { x: number; y: number };
+  isDragging?: boolean;
+  zIndex?: number;
 }
 
 const API_BASE_URL = 'http://localhost:5001/todos/';
 
 function App() {
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [todos, setTodos] = useState<FloatingTodo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTodoId, setSelectedTodoId] = useState<number | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [highestZIndex, setHighestZIndex] = useState(1000);
+  const [windowSize, setWindowSize] = useState({ 
+    width: window.innerWidth, 
+    height: window.innerHeight 
+  });
+  const [showDebugMode, setShowDebugMode] = useState(false);
+  const [updatingTodoId, setUpdatingTodoId] = useState<number | null>(null);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -33,7 +50,32 @@ function App() {
       }
       const data = await response.json();
       console.log('Fetched todos:', data);
-      setTodos(data);
+      
+      // Calculate dynamic todo size based on window size
+      const todoWidth = Math.max(200, Math.min(350, windowSize.width * 0.25));
+      const todoHeight = Math.max(100, Math.min(200, windowSize.height * 0.15));
+      
+      // Convert to floating todos with positions from backend or random if not set
+      const floatingTodos: FloatingTodo[] = data.map((todo: any, index: number) => {
+        // Use backend position if available, otherwise generate random position
+        let position;
+        if (todo.position_x !== null && todo.position_y !== null) {
+          position = { x: todo.position_x, y: todo.position_y };
+        } else {
+          position = {
+            x: Math.random() * (windowSize.width - todoWidth) + 50,
+            y: Math.random() * (windowSize.height - todoHeight) + 50
+          };
+        }
+        
+        return {
+          ...todo,
+          position,
+          zIndex: 1000 + index
+        };
+      });
+      
+      setTodos(floatingTodos);
     } catch (error) {
       console.error('Failed to fetch todos:', error);
     } finally {
@@ -41,9 +83,29 @@ function App() {
     }
   };
 
+  // Window resize handler
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Calculate dynamic todo dimensions based on window size
+  const getTodoDimensions = () => {
+    const width = Math.max(200, Math.min(350, windowSize.width * 0.25));
+    const height = Math.max(100, Math.min(200, windowSize.height * 0.15));
+    return { width, height };
+  };
+
   const toggleTodo = async (id: number) => {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
+
+    // Set updating state for visual feedback
+    setUpdatingTodoId(id);
 
     try {
       const response = await fetch(`${API_BASE_URL}${id}`, {
@@ -54,6 +116,8 @@ function App() {
         body: JSON.stringify({
           ...todo,
           completed: !todo.completed,
+          position_x: todo.position.x,
+          position_y: todo.position.y,
         }),
       });
 
@@ -62,15 +126,111 @@ function App() {
       }
 
       const updatedTodo = await response.json();
-      setTodos(todos.map(t => t.id === id ? updatedTodo : t));
+      
+      // Preserve position and zIndex data when updating
+      setTodos(todos.map(t => t.id === id ? {
+        ...updatedTodo,
+        position: t.position, // Keep original position
+        zIndex: t.zIndex      // Keep original zIndex
+      } : t));
     } catch (error) {
       console.error('Failed to toggle todo:', error);
+    } finally {
+      // Clear updating state
+      setUpdatingTodoId(null);
     }
   };
 
-  const deleteTodo = async (id: number) => {
+  // Dragging functionality
+  const handleMouseDown = (event: React.MouseEvent, todo: FloatingTodo) => {
+    if (!todo.id) return;
+    
+    // Calculate offset based on current todo position and mouse position
+    setDragOffset({
+      x: event.clientX - todo.position.x,
+      y: event.clientY - todo.position.y
+    });
+    setSelectedTodoId(todo.id);
+    setIsDragging(true);
+    
+    // Bring to front
+    const newZIndex = highestZIndex + 1;
+    setHighestZIndex(newZIndex);
+    setTodos(prev => prev.map(t => 
+      t.id === todo.id ? { ...t, zIndex: newZIndex } : t
+    ));
+    
+    event.preventDefault();
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    if (!isDragging || !selectedTodoId) return;
+    
+    // Get current window dimensions directly from the DOM
+    const currentWindowWidth = window.innerWidth;
+    const currentWindowHeight = window.innerHeight;
+    
+    // Calculate fresh dimensions for this drag operation
+    const todoWidth = Math.max(200, Math.min(350, currentWindowWidth * 0.25));
+    const todoHeight = Math.max(100, Math.min(200, currentWindowHeight * 0.15));
+    
+    const newPosition = {
+      x: event.clientX - dragOffset.x,
+      y: event.clientY - dragOffset.y
+    };
+    
+    // Keep within screen bounds using fresh dimensions
+    const boundedPosition = {
+      x: Math.max(0, Math.min(currentWindowWidth - todoWidth, newPosition.x)),
+      y: Math.max(0, Math.min(currentWindowHeight - todoHeight, newPosition.y))
+    };
+    
+    setTodos(prev => prev.map(todo => 
+      todo.id === selectedTodoId 
+        ? { ...todo, position: boundedPosition }
+        : todo
+    ));
+  };
+
+  const handleMouseUp = () => {
+    // Save position to backend if we were dragging
+    if (isDragging && selectedTodoId) {
+      const todo = todos.find(t => t.id === selectedTodoId);
+      if (todo) {
+        updateTodoPosition(selectedTodoId, todo.position);
+      }
+    }
+    
+    setIsDragging(false);
+    setSelectedTodoId(null);
+  };
+
+  const updateTodoPosition = async (id: number, position: { x: number; y: number }) => {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+
     try {
-      const response = await fetch(`${API_BASE_URL}${id}`, {
+      await fetch(`${API_BASE_URL}${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...todo,
+          position_x: position.x,
+          position_y: position.y,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to update todo position:', error);
+    }
+  };
+
+  const handleDoubleClick = async (todo: FloatingTodo) => {
+    if (!todo.id) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}${todo.id}`, {
         method: 'DELETE',
       });
 
@@ -78,13 +238,26 @@ function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setTodos(todos.filter(t => t.id !== id));
+      setTodos(todos.filter(t => t.id !== todo.id));
     } catch (error) {
       console.error('Failed to delete todo:', error);
     }
   };
 
-  // Add keyboard event listener for 'N' key and track mouse position
+  // Add global mouse event listeners for dragging
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, selectedTodoId, dragOffset]);
+
+  // Add keyboard event listener for 'N' key, 'X' key for completion, and track mouse position
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Only trigger if not typing in an input field and modal is not already open
@@ -93,6 +266,33 @@ function App() {
           !(event.target as HTMLElement).matches('input, textarea')) {
         event.preventDefault();
         openModal();
+      }
+      
+      // X key to toggle completion of the most recently created or top-most todo
+      if (event.key.toLowerCase() === 'x' && 
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        
+        // Only proceed if there are todos
+        if (todos.length > 0) {
+          // Find the todo with the highest z-index (most recent/top-most)
+          const topTodo = todos.reduce((prev, current) => 
+            (current.zIndex || 0) > (prev.zIndex || 0) ? current : prev
+          );
+          
+          if (topTodo.id) {
+            toggleTodo(topTodo.id);
+          }
+        }
+      }
+      
+      // D key to toggle debug mode
+      if (event.key.toLowerCase() === 'd' && 
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        setShowDebugMode(prev => !prev);
       }
       
       // ESC key to close modal - but only if not focused on modal inputs
@@ -106,8 +306,8 @@ function App() {
     };
 
     const handleMouseMove = (event: MouseEvent) => {
-      // Only track mouse when modal is not open
-      if (!showModal) {
+      // Only track mouse when modal is not open and not dragging
+      if (!showModal && !isDragging) {
         lastMousePosition.current = { x: event.clientX, y: event.clientY };
       }
     };
@@ -119,7 +319,7 @@ function App() {
       document.removeEventListener('keydown', handleKeyPress);
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [showModal]);
+  }, [showModal, todos, isDragging]);
 
   const openModal = () => {
     // Use last known mouse position
@@ -151,6 +351,13 @@ function App() {
     if (!modalTitle.trim()) return;
 
     try {
+      // Create floating todo at modal position using dynamic dimensions
+      const dimensions = getTodoDimensions();
+      const newPosition = {
+        x: Math.max(0, Math.min(windowSize.width - dimensions.width, modalPosition.x - dimensions.width/2)),
+        y: Math.max(0, Math.min(windowSize.height - dimensions.height, modalPosition.y + 50))
+      };
+
       const response = await fetch(API_BASE_URL, {
         method: 'POST',
         headers: {
@@ -160,6 +367,8 @@ function App() {
           title: modalTitle,
           description: modalDescription,
           completed: false,
+          position_x: newPosition.x,
+          position_y: newPosition.y,
         }),
       });
 
@@ -168,7 +377,15 @@ function App() {
       }
 
       const newTodo = await response.json();
-      setTodos([...todos, newTodo]);
+      
+      const newFloatingTodo: FloatingTodo = {
+        ...newTodo,
+        position: newPosition,
+        zIndex: highestZIndex + 1
+      };
+      
+      setHighestZIndex(prev => prev + 1);
+      setTodos([...todos, newFloatingTodo]);
       
       setShowModal(false);
       setModalStep('title');
@@ -206,37 +423,79 @@ function App() {
   return (
     <div className="app">
       <div className="ambient-water-effect"></div>
-      <div className="container">
-        <div className="todos">
-          {todos.length === 0 ? (
-            <p className="empty-state">Press N to add a todo</p>
-          ) : (
-            todos.map(todo => (
-              <div key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
-                <div className="todo-content">
-                  <span className="todo-title">{todo.title}</span>
-                </div>
-                <div className="todo-actions">
-                  <button 
-                    onClick={() => todo.id && toggleTodo(todo.id)}
-                    className="toggle-btn"
-                    title={todo.completed ? 'Mark as incomplete' : 'Mark as complete'}
-                  >
-                    {todo.completed ? '↶' : '✓'}
-                  </button>
-                  <button
-                    onClick={() => todo.id && deleteTodo(todo.id)}
-                    className="delete-btn"
-                    title="Delete todo"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+      
+      {/* Debug info */}
+      {showDebugMode && (
+        <div className="debug-info">
+          <div>Window: {windowSize.width}x{windowSize.height}</div>
+          <div>Todo size: {getTodoDimensions().width}x{getTodoDimensions().height}</div>
+          <div>Todos: {todos.length}</div>
+          <div>Press D to toggle debug</div>
         </div>
-      </div>
+      )}
+      
+      {/* Floating Todos */}
+      {todos.map(todo => {
+        const dimensions = getTodoDimensions();
+        return (
+          <div
+            key={todo.id}
+            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''}`}
+            style={{
+              left: todo.position.x,
+              top: todo.position.y,
+              width: dimensions.width,
+              minHeight: dimensions.height,
+              zIndex: todo.zIndex || 1000
+            }}
+            onMouseDown={(e) => handleMouseDown(e, todo)}
+            onDoubleClick={() => handleDoubleClick(todo)}
+          >
+            <div className="floating-todo-content">
+              <div className="floating-todo-title">{todo.title}</div>
+              {todo.description && (
+                <div className="floating-todo-description">{todo.description}</div>
+              )}
+            </div>
+            
+            {/* Glass shimmer effect */}
+            <div className="floating-todo-shimmer"></div>
+            
+            {/* Completion indicator */}
+            {todo.completed && <div className="completion-indicator">✓</div>}
+            
+            {/* Debug rectangle */}
+            {showDebugMode && (
+              <>
+                <div 
+                  className="debug-rectangle"
+                  style={{
+                    width: dimensions.width,
+                    height: dimensions.height
+                  }}
+                />
+                <div className="debug-coordinates">
+                  ID: {todo.id}<br/>
+                  X: {Math.round(todo.position.x)}<br/>
+                  Y: {Math.round(todo.position.y)}<br/>
+                  Z: {todo.zIndex}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Empty state when no todos */}
+      {todos.length === 0 && !loading && (
+        <div className="floating-empty-state">
+          <div className="empty-state-content">
+            <div className="empty-state-title">Your floating workspace awaits</div>
+            <div className="empty-state-subtitle">Press N to create your first floating task</div>
+            <div className="empty-state-hint">Press X to complete • Double-click to delete • Press D for debug</div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (
@@ -276,8 +535,8 @@ function App() {
             <div 
               className="modal-content-minimal" 
               style={{
-                left: Math.min(Math.max(modalPosition.x - 160, 10), window.innerWidth - 330),
-                top: Math.min(Math.max(modalPosition.y - 28, 10), window.innerHeight - 66)
+                left: Math.min(Math.max(modalPosition.x - 160, 10), windowSize.width - 330),
+                top: Math.min(Math.max(modalPosition.y - 28, 10), windowSize.height - 66)
               }}
             >
             {modalStep === 'title' ? (
