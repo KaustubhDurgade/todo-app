@@ -413,6 +413,10 @@ body {
   animation: energyPulse 3s ease-in-out infinite;
 }
 
+.modal-energy-ring.closing {
+  animation: energyDissolve 0.4s ease-in forwards;
+}
+
 .modal-energy-ring-1 {
   animation-delay: 0s;
 }
@@ -434,6 +438,10 @@ body {
   z-index: 10001;
   animation: fadeInAero 0.3s ease-out;
   cursor: none;
+}
+
+.modal-overlay-minimal.closing {
+  animation: fadeOutAero 0.3s ease-in forwards;
 }
 
 .modal-content-minimal {
@@ -462,6 +470,10 @@ body {
   align-items: center;
   overflow: hidden;
   position: relative;
+}
+
+.modal-content-minimal.closing {
+  animation: slideOutAero 0.3s ease-in forwards;
 }
 
 .modal-content-minimal::before {
@@ -511,6 +523,9 @@ body {
   padding-bottom: 18px;
   display: block;
   align-items: unset;
+  max-height: 56px;
+  overflow-y: auto;
+  line-height: 1.2;
 }
 
 .modal-input-minimal:focus,
@@ -615,6 +630,59 @@ body {
   }
   100% {
     transform: translateX(100%) translateY(100%) rotate(15deg);
+  }
+}
+
+/* Exit Animations */
+@keyframes fadeOutAero {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(8px) saturate(1.2);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(4px) saturate(1);
+  }
+}
+
+@keyframes slideOutAero {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+    filter: blur(1px);
+  }
+}
+
+@keyframes energyDissolve {
+  0% {
+    transform: scale(1.5);
+    opacity: 0;
+    filter: blur(2px);
+  }
+  25% {
+    transform: scale(1.3);
+    opacity: 0.1;
+    filter: blur(1.5px);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+    filter: blur(1px);
+  }
+  75% {
+    transform: scale(1);
+    opacity: 0.6;
+    filter: blur(0.5px);
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0;
+    filter: blur(0px);
   }
 }
 

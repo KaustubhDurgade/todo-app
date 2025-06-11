@@ -30,9 +30,11 @@ function App() {
   });
   const [showDebugMode, setShowDebugMode] = useState(false);
   const [updatingTodoId, setUpdatingTodoId] = useState<number | null>(null);
+  const [hoveredTodoId, setHoveredTodoId] = useState<number | null>(null);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
+  const [modalClosing, setModalClosing] = useState(false);
   const [modalStep, setModalStep] = useState<'title' | 'description'>('title');
   const [modalTitle, setModalTitle] = useState('');
   const [modalDescription, setModalDescription] = useState('');
@@ -268,22 +270,15 @@ function App() {
         openModal();
       }
       
-      // X key to toggle completion of the most recently created or top-most todo
+      // X key to toggle completion of the hovered todo
       if (event.key.toLowerCase() === 'x' && 
           !showModal && 
           !(event.target as HTMLElement).matches('input, textarea')) {
         event.preventDefault();
         
-        // Only proceed if there are todos
-        if (todos.length > 0) {
-          // Find the todo with the highest z-index (most recent/top-most)
-          const topTodo = todos.reduce((prev, current) => 
-            (current.zIndex || 0) > (prev.zIndex || 0) ? current : prev
-          );
-          
-          if (topTodo.id) {
-            toggleTodo(topTodo.id);
-          }
+        // Only proceed if there's a hovered todo
+        if (hoveredTodoId) {
+          toggleTodo(hoveredTodoId);
         }
       }
       
@@ -319,7 +314,7 @@ function App() {
       document.removeEventListener('keydown', handleKeyPress);
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [showModal, todos, isDragging]);
+  }, [showModal, todos, isDragging, hoveredTodoId]);
 
   const openModal = () => {
     // Use last known mouse position
@@ -335,10 +330,16 @@ function App() {
   };
 
   const closeModal = () => {
-    setShowModal(false);
-    setModalStep('title');
-    setModalTitle('');
-    setModalDescription('');
+    setModalClosing(true);
+    
+    // Wait for animation to complete before hiding modal
+    setTimeout(() => {
+      setShowModal(false);
+      setModalClosing(false);
+      setModalStep('title');
+      setModalTitle('');
+      setModalDescription('');
+    }, 300); // Match the animation duration
   };
 
   const handleModalNext = () => {
@@ -355,7 +356,7 @@ function App() {
       const dimensions = getTodoDimensions();
       const newPosition = {
         x: Math.max(0, Math.min(windowSize.width - dimensions.width, modalPosition.x - dimensions.width/2)),
-        y: Math.max(0, Math.min(windowSize.height - dimensions.height, modalPosition.y + 50))
+        y: Math.max(0, Math.min(windowSize.height - dimensions.height, modalPosition.y - dimensions.height/2))
       };
 
       const response = await fetch(API_BASE_URL, {
@@ -387,10 +388,15 @@ function App() {
       setHighestZIndex(prev => prev + 1);
       setTodos([...todos, newFloatingTodo]);
       
-      setShowModal(false);
-      setModalStep('title');
-      setModalTitle('');
-      setModalDescription('');
+      // Use closing animation
+      setModalClosing(true);
+      setTimeout(() => {
+        setShowModal(false);
+        setModalClosing(false);
+        setModalStep('title');
+        setModalTitle('');
+        setModalDescription('');
+      }, 300);
     } catch (error) {
       console.error('Failed to add todo:', error);
     }
@@ -450,6 +456,8 @@ function App() {
             }}
             onMouseDown={(e) => handleMouseDown(e, todo)}
             onDoubleClick={() => handleDoubleClick(todo)}
+            onMouseEnter={() => setHoveredTodoId(todo.id || null)}
+            onMouseLeave={() => setHoveredTodoId(null)}
           >
             <div className="floating-todo-content">
               <div className="floating-todo-title">{todo.title}</div>
@@ -501,28 +509,28 @@ function App() {
       {showModal && (
         <>
           <div 
-            className="modal-energy-ring modal-energy-ring-1"
+            className={`modal-energy-ring modal-energy-ring-1 ${modalClosing ? 'closing' : ''}`}
             style={{
               left: modalPosition.x - 100,
               top: modalPosition.y - 100
             }}
           />
           <div 
-            className="modal-energy-ring modal-energy-ring-2"
+            className={`modal-energy-ring modal-energy-ring-2 ${modalClosing ? 'closing' : ''}`}
             style={{
               left: modalPosition.x - 150,
               top: modalPosition.y - 150
             }}
           />
           <div 
-            className="modal-energy-ring modal-energy-ring-3"
+            className={`modal-energy-ring modal-energy-ring-3 ${modalClosing ? 'closing' : ''}`}
             style={{
               left: modalPosition.x - 200,
               top: modalPosition.y - 200
             }}
           />
           <div 
-            className="modal-overlay-minimal"
+            className={`modal-overlay-minimal ${modalClosing ? 'closing' : ''}`}
             style={{
               background: `radial-gradient(circle at ${modalPosition.x}px ${modalPosition.y}px, 
                 rgba(0, 150, 255, 0.08) 0%, 
@@ -533,7 +541,7 @@ function App() {
             }}
           >
             <div 
-              className="modal-content-minimal" 
+              className={`modal-content-minimal ${modalClosing ? 'closing' : ''}`}
               style={{
                 left: Math.min(Math.max(modalPosition.x - 160, 10), windowSize.width - 330),
                 top: Math.min(Math.max(modalPosition.y - 28, 10), windowSize.height - 66)
