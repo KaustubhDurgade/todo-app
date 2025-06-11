@@ -1,4 +1,4 @@
-/* Simple, clean styles for the todo app */
+/* Minimal, clean styles */
 * {
   margin: 0;
   padding: 0;
@@ -6,156 +6,417 @@
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f5f5f5;
-  color: #333;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Display', sans-serif;
+  background: linear-gradient(135deg, 
+    rgba(245, 251, 255, 1) 0%, 
+    rgba(230, 245, 255, 1) 25%,
+    rgba(240, 248, 255, 1) 50%,
+    rgba(235, 250, 255, 1) 75%,
+    rgba(250, 253, 255, 1) 100%);
+  background-attachment: fixed;
+  color: rgba(0, 80, 120, 0.9);
+  line-height: 1.4;
+  min-height: 100vh;
+}
+
+/* Ambient Water Effect - Ultra Subtle */
+.ambient-water-effect {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.ambient-water-effect::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  right: -50%;
+  bottom: -50%;
+  background: linear-gradient(
+    45deg,
+    transparent 0%,
+    transparent 48%,
+    rgba(0, 150, 255, 0.015) 49%,
+    rgba(255, 255, 255, 0.008) 50%,
+    rgba(0, 200, 150, 0.012) 51%,
+    transparent 52%,
+    transparent 100%
+  );
+  background-size: 200px 200px;
+  animation: ambientWater 25s linear infinite;
+  transform: rotate(15deg);
+}
+
+.ambient-water-effect::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  right: -50%;
+  bottom: -50%;
+  background: linear-gradient(
+    -45deg,
+    transparent 0%,
+    transparent 47%,
+    rgba(100, 180, 255, 0.008) 48%,
+    rgba(0, 150, 255, 0.012) 49%,
+    rgba(255, 255, 255, 0.006) 50%,
+    rgba(0, 200, 150, 0.01) 51%,
+    rgba(150, 200, 255, 0.008) 52%,
+    transparent 53%,
+    transparent 100%
+  );
+  background-size: 300px 300px;
+  animation: ambientWater 35s linear infinite reverse;
+  transform: rotate(-20deg);
 }
 
 .app {
   min-height: 100vh;
   padding: 20px;
+  display: flex;
+  justify-content: center;
 }
 
 .container {
-  max-width: 800px;
-  margin: 0 auto;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 30px;
-}
-
-h1 {
-  text-align: center;
-  color: #2c3e50;
-  margin-bottom: 30px;
-  font-size: 2.5rem;
+  width: 100%;
+  max-width: 600px;
+  margin-top: 40px;
+  position: relative;
+  z-index: 2;
 }
 
 .loading {
   text-align: center;
-  font-size: 1.2rem;
-  padding: 50px;
-}
-
-.add-form {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 30px;
-}
-
-.form-group {
-  margin-bottom: 15px;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 16px;
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
-}
-
-button {
-  background: #3498db;
-  color: white;
-  border: none;
-  padding: 12px 20px;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-button:hover {
-  background: #2980b9;
+  font-size: 14px;
+  color: #999;
+  padding: 40px;
 }
 
 .todos {
-  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-state {
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  padding: 60px 20px;
+  font-style: italic;
 }
 
 .todo-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  padding: 12px 16px;
   background: white;
-  transition: all 0.2s;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
 .todo-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: translateY(-1px);
+  border-color: #ddd;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .todo-item.completed {
-  opacity: 0.7;
-  background: #f8f9fa;
+  opacity: 0.6;
+  background: #fafafa;
 }
 
-.todo-content h3 {
-  margin-bottom: 5px;
-  color: #2c3e50;
+.todo-content {
+  flex: 1;
+  min-width: 0;
 }
 
-.todo-item.completed .todo-content h3 {
-  text-decoration: line-through;
-  color: #7f8c8d;
-}
-
-.todo-content p {
-  color: #7f8c8d;
+.todo-title {
   font-size: 14px;
+  color: #333;
+  word-break: break-word;
+}
+
+.todo-item.completed .todo-title {
+  text-decoration: line-through;
+  color: #999;
 }
 
 .todo-actions {
   display: flex;
-  gap: 10px;
+  gap: 4px;
+  margin-left: 12px;
 }
 
-.todo-actions button {
-  padding: 8px 15px;
+.toggle-btn,
+.delete-btn {
+  background: none;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
+  transition: all 0.2s ease;
+  color: #666;
 }
 
-.complete {
-  background: #27ae60;
+.toggle-btn:hover {
+  background: #f0f9ff;
+  color: #0ea5e9;
 }
 
-.complete:hover {
-  background: #229954;
+.delete-btn:hover {
+  background: #fef2f2;
+  color: #ef4444;
 }
 
-.uncomplete {
-  background: #f39c12;
+.toggle-btn:active,
+.delete-btn:active {
+  transform: scale(0.95);
 }
 
-.uncomplete:hover {
-  background: #e67e22;
+/* Minimal Modal Styles - Frutiger Aero Liquid Glass */
+.modal-radial-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  animation: radiateGlow 2s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
-.delete {
-  background: #e74c3c;
+.modal-energy-ring {
+  position: fixed;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 150, 255, 0.2);
+  background: radial-gradient(circle, 
+    rgba(0, 150, 255, 0.05) 0%, 
+    rgba(0, 150, 255, 0.02) 50%, 
+    transparent 100%);
+  z-index: 998;
+  pointer-events: none;
+  animation: energyPulse 3s ease-in-out infinite;
 }
 
-.delete:hover {
-  background: #c0392b;
+.modal-energy-ring-1 {
+  animation-delay: 0s;
 }
 
-.todos p {
-  text-align: center;
-  color: #7f8c8d;
-  font-style: italic;
-  padding: 30px;
+.modal-energy-ring-2 {
+  width: 300px;
+  height: 300px;
+  border: 1px solid rgba(100, 180, 255, 0.15);
+  animation-delay: 1.5s;
 }
+
+.modal-overlay-minimal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  backdrop-filter: blur(8px) saturate(1.2);
+  z-index: 1000;
+  animation: fadeInAero 0.3s ease-out;
+  cursor: none;
+}
+
+.modal-content-minimal {
+  position: absolute;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(240, 248, 255, 0.85) 25%,
+    rgba(225, 245, 254, 0.9) 50%,
+    rgba(240, 248, 255, 0.85) 75%,
+    rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: blur(25px) saturate(1.8) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50px;
+  box-shadow: 
+    0 8px 32px rgba(0, 150, 255, 0.15),
+    0 2px 8px rgba(255, 255, 255, 0.4) inset,
+    0 -1px 2px rgba(0, 100, 200, 0.1) inset;
+  width: 320px;
+  height: 56px;
+  padding: 0;
+  animation: slideInAero 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: 1001;
+  cursor: none;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.modal-content-minimal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, 
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    rgba(0, 150, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.1) 70%,
+    transparent 100%);
+  border-radius: 50px;
+  pointer-events: none;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.modal-input-minimal,
+.modal-textarea-minimal {
+  width: 100%;
+  height: 100%;
+  padding: 0 24px;
+  border: none;
+  border-radius: 50px;
+  font-size: 15px;
+  font-weight: 400;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Display', sans-serif;
+  background: transparent;
+  color: rgba(0, 80, 120, 0.9);
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  resize: none;
+  outline: none;
+  cursor: none;
+  caret-color: rgba(0, 150, 255, 0.8);
+  text-align: left;
+  z-index: 2;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.modal-textarea-minimal {
+  padding-top: 18px;
+  padding-bottom: 18px;
+  display: block;
+  align-items: unset;
+}
+
+.modal-input-minimal:focus,
+.modal-textarea-minimal:focus {
+  background: transparent;
+  color: rgba(0, 60, 100, 1);
+  caret-color: rgba(0, 150, 255, 1);
+}
+
+.modal-input-minimal::placeholder,
+.modal-textarea-minimal::placeholder {
+  color: rgba(0, 120, 180, 0.4);
+  font-size: 13px;
+  font-weight: 300;
+}
+
+/* Frutiger Aero Animations */
+@keyframes fadeInAero {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(4px) saturate(1);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px) saturate(1.2);
+  }
+}
+
+@keyframes slideInAero {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-15px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes radiateGlow {
+  0% {
+    opacity: 0.8;
+    filter: brightness(1) saturate(1.2);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.1) saturate(1.4);
+  }
+  100% {
+    opacity: 0.8;
+    filter: brightness(1) saturate(1.2);
+  }
+}
+
+@keyframes energyPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+    filter: blur(0px);
+  }
+  25% {
+    transform: scale(1);
+    opacity: 0.6;
+    filter: blur(0.5px);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+    filter: blur(1px);
+  }
+  75% {
+    transform: scale(1.3);
+    opacity: 0.1;
+    filter: blur(1.5px);
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@keyframes ambientWater {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(15deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(15deg);
+  }
+}
+
+
