@@ -4,12 +4,16 @@ interface Todo {
   title: string;
   description?: string;
   completed: boolean;
+  position_x?: number;
+  position_y?: number;
 }
 
 interface NewTodo {
   title: string;
   description?: string;
   completed?: boolean;
+  position_x?: number;
+  position_y?: number;
 }
 
 const API_BASE_URL = 'http://localhost:5002/todos/';

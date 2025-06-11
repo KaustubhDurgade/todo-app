@@ -20,11 +20,58 @@ body.pushing * {
   cursor: crosshair !important;
 }
 
+/* Hide cursor when dragging */
+body.dragging {
+  cursor: none !important;
+}
+
+body.dragging * {
+  cursor: none !important;
+}
+
 .app {
   max-width: 900px;
   margin: 0 auto;
   padding: 2rem 1rem;
   min-height: 100vh;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .app {
+    padding: 1rem 0.5rem;
+  }
+  
+  .header h1 {
+    font-size: 2rem;
+  }
+  
+  .todo-item {
+    min-width: 180px;
+    max-width: 250px;
+    width: 250px; /* Should match the mobile width in getTodoDimensions() */
+  }
+  
+  .keyboard-hint {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .todo-item {
+    min-width: 160px;
+    max-width: 220px;
+    width: 220px;
+  }
+  
+  .keyboard-hint {
+    font-size: 0.7rem;
+  }
 }
 
 .header {
@@ -71,10 +118,11 @@ kbd {
   width: 100%;
   height: calc(100vh - 200px);
   min-height: 400px;
+  overflow: hidden; /* Prevent todos from creating scrollbars */
 }
 
 .todo-item {
-  position: absolute;
+  position: fixed; /* Changed from absolute to fixed for full-screen positioning */
   background: #fff;
   border-radius: 12px;
   padding: 1rem;
@@ -86,8 +134,10 @@ kbd {
   border: 1px solid #e0e0e0;
   min-width: 200px;
   max-width: 300px;
+  width: 300px; /* Fixed width for consistent positioning calculations */
   user-select: none;
-  z-index: 1;
+  z-index: 100; /* Higher z-index to appear above header */
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .todo-item.hovered {
@@ -101,7 +151,7 @@ kbd {
 }
 
 .todo-item.dragging {
-  z-index: 1000;
+  z-index: 1000; /* Even higher when dragging */
   transform: rotate(5deg) scale(1.05);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
 }
