@@ -49,6 +49,30 @@ coverage/
 *.coverage
 .nyc_output
 
+# Personal files and notes
+*.local
+*.personal
+notes/
+docs/personal/
+TODO.personal
+NOTES.md
+.scratch/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Backup files
+*.bak
+*.backup
+*~
+
 # Temporary files
 *.tmp
 *.temp
