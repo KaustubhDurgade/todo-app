@@ -1,5 +1,7 @@
 # Python cache files
 __pycache__/
+*/__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -10,13 +12,16 @@ venv/
 env/
 ENV/
 
-# Database files (keep todos.db for development)
-# *.db
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
 # Logs
 logs/
 *.log
 *.log.*
+**/logs/
 
 # Node.js
 node_modules/

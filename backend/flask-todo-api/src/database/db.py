@@ -7,13 +7,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 database_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'todos.db')
-engine = create_engine(f'sqlite:///{database_file}')
+
+# Optimized engine configuration
+engine = create_engine(
+    f'sqlite:///{database_file}',
+    pool_pre_ping=True,  # Verify connections before use
+    pool_recycle=3600,   # Recycle connections every hour
+    connect_args={
+        'check_same_thread': False,
+        'timeout': 30,
+        # SQLite optimization pragmas
+        'isolation_level': None  # Enable autocommit mode
+    },
+    echo=False  # Disable SQL logging for performance
+)
 
 db_session = scoped_session(
     sessionmaker(
         autocommit=False,
         autoflush=False,
-        bind=engine
+        bind=engine,
+        expire_on_commit=False  # Keep objects accessible after commit
     )
 )
 
