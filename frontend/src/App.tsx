@@ -40,8 +40,26 @@ function App() {
   const [modalDescription, setModalDescription] = useState('');
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchClosing, setSearchClosing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchSelectedTodos, setSearchSelectedTodos] = useState<Set<number>>(new Set());
+  const [highlightedTodos, setHighlightedTodos] = useState<Set<number>>(new Set());
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
   // Track last known mouse position
   const lastMousePosition = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  
+  // Repulsion system refs
+  const repulsionAnimationFrame = useRef<number | null>(null);
+
+  // Physics constants for task repulsion
+  const GENTLE_REPULSION_FORCE = 15; // Subtle force to prevent stacking
+  const GENTLE_REPULSION_RADIUS = 180; // Distance for gentle repulsion
+  const DRAG_REPULSION_FORCE = 45; // Stronger force when dragging
+  const DRAG_REPULSION_RADIUS = 250; // Larger radius when dragging
+  const REPULSION_SMOOTHING = 0.1; // How quickly tasks move apart (0-1)
 
   // Calculate dynamic todo dimensions based on window size (memoized)
   const getTodoDimensions = useCallback(() => {
@@ -49,6 +67,102 @@ function App() {
     const height = Math.max(100, Math.min(200, windowSize.height * 0.15));
     return { width, height };
   }, [windowSize.width, windowSize.height]);
+
+  // Calculate repulsion force between two todos
+  const calculateRepulsionBetweenTodos = useCallback((
+    todo1: FloatingTodo,
+    todo2: FloatingTodo,
+    dimensions: { width: number; height: number },
+    isDraggingMode: boolean = false
+  ): { x: number; y: number } => {
+    // Calculate centers of both todos
+    const center1 = {
+      x: todo1.position.x + dimensions.width / 2,
+      y: todo1.position.y + dimensions.height / 2
+    };
+    const center2 = {
+      x: todo2.position.x + dimensions.width / 2,
+      y: todo2.position.y + dimensions.height / 2
+    };
+    
+    // Vector from todo2 to todo1
+    const deltaX = center1.x - center2.x;
+    const deltaY = center1.y - center2.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    // Choose force and radius based on drag mode
+    const force = isDraggingMode ? DRAG_REPULSION_FORCE : GENTLE_REPULSION_FORCE;
+    const radius = isDraggingMode ? DRAG_REPULSION_RADIUS : GENTLE_REPULSION_RADIUS;
+    
+    // No repulsion if outside radius or too close
+    if (distance > radius || distance < 1) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Normalize direction vector
+    const normalizedX = deltaX / distance;
+    const normalizedY = deltaY / distance;
+    
+    // Calculate force strength (inverse square with falloff)
+    const falloff = 1 - (distance / radius);
+    const forceStrength = force * falloff * falloff;
+    
+    return {
+      x: normalizedX * forceStrength,
+      y: normalizedY * forceStrength
+    };
+  }, []);
+
+  // Apply repulsion forces to all todos
+  const applyRepulsionForces = useCallback(() => {
+    const dimensions = getTodoDimensions();
+    const dragMode = isDragging;
+    
+    setTodos(prevTodos => {
+      if (prevTodos.length < 2) return prevTodos; // No repulsion needed for single todo
+      
+      const newTodos = [...prevTodos];
+      
+      // Calculate repulsion forces for each todo
+      for (let i = 0; i < newTodos.length; i++) {
+        let totalForceX = 0;
+        let totalForceY = 0;
+        
+        // Calculate repulsion from all other todos
+        for (let j = 0; j < newTodos.length; j++) {
+          if (i === j) continue;
+          
+          const force = calculateRepulsionBetweenTodos(
+            newTodos[i],
+            newTodos[j],
+            dimensions,
+            dragMode
+          );
+          
+          totalForceX += force.x;
+          totalForceY += force.y;
+        }
+        
+        // Apply the force with smoothing
+        if (totalForceX !== 0 || totalForceY !== 0) {
+          const currentPos = newTodos[i].position;
+          const newX = currentPos.x + (totalForceX * REPULSION_SMOOTHING);
+          const newY = currentPos.y + (totalForceY * REPULSION_SMOOTHING);
+          
+          // Keep within screen bounds
+          const boundedX = Math.max(0, Math.min(windowSize.width - dimensions.width, newX));
+          const boundedY = Math.max(0, Math.min(windowSize.height - dimensions.height, newY));
+          
+          newTodos[i] = {
+            ...newTodos[i],
+            position: { x: boundedX, y: boundedY }
+          };
+        }
+      }
+      
+      return newTodos;
+    });
+  }, [getTodoDimensions, isDragging, calculateRepulsionBetweenTodos, windowSize]);
 
   const fetchTodos = useCallback(async () => {
     try {
@@ -280,6 +394,20 @@ function App() {
         }
       }
       
+      // Backspace key to delete the hovered todo
+      if (event.key === 'Backspace' && 
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        // Only proceed if there's a hovered todo
+        if (hoveredTodoId) {
+          const todo = todos.find(t => t.id === hoveredTodoId);
+          if (todo) {
+            handleDoubleClick(todo);
+          }
+        }
+      }
+      
       // D key to toggle debug mode
       if (event.key.toLowerCase() === 'd' && 
           !showModal && 
@@ -288,7 +416,7 @@ function App() {
         setShowDebugMode(prev => !prev);
       }
       
-      // ESC key to close modal - but only if not focused on modal inputs
+      // ESC key to close modal
       if (event.key === 'Escape' && showModal) {
         const target = event.target as HTMLElement;
         const isModalInput = target.matches('.modal-input-minimal, .modal-textarea-minimal');
@@ -312,7 +440,25 @@ function App() {
       document.removeEventListener('keydown', handleKeyPress);
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [showModal, todos, isDragging, hoveredTodoId]);
+  }, [showModal, showSearch, todos, isDragging, hoveredTodoId, toggleTodo, handleDoubleClick]);
+
+  // Continuous repulsion animation loop
+  useEffect(() => {
+    if (todos.length < 2) return; // No need for repulsion with less than 2 todos
+    
+    const animate = () => {
+      applyRepulsionForces();
+      repulsionAnimationFrame.current = requestAnimationFrame(animate);
+    };
+    
+    repulsionAnimationFrame.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (repulsionAnimationFrame.current) {
+        cancelAnimationFrame(repulsionAnimationFrame.current);
+      }
+    };
+  }, [todos.length, applyRepulsionForces]);
 
   const openModal = useCallback(() => {
     // Use last known mouse position
@@ -416,6 +562,89 @@ function App() {
     }
   }, [modalTitle, handleModalNext, handleModalSubmit, closeModal]);
 
+  // Search functionality
+  const openSearch = useCallback(() => {
+    setShowSearch(true);
+    setSearchQuery('');
+    setSearchSelectedTodos(new Set());
+    setHighlightedTodos(new Set());
+    // Focus the search input after a brief delay for animation
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchClosing(true);
+    // Wait for animation to complete before hiding search
+    setTimeout(() => {
+      setShowSearch(false);
+      setSearchClosing(false);
+      setSearchQuery('');
+      setSearchSelectedTodos(new Set());
+    }, 300);
+  }, []);
+
+  // Calculate filtered todos based on search query
+  const filteredTodos = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    
+    const query = searchQuery.toLowerCase();
+    return todos.filter(todo => {
+      const titleMatch = todo.title.toLowerCase().includes(query);
+      const descriptionMatch = todo.description?.toLowerCase().includes(query);
+      return titleMatch || descriptionMatch;
+    });
+  }, [todos, searchQuery]);
+
+  // Calculate search grid positions for filtered todos
+  const searchGridPositions = useMemo(() => {
+    if (!filteredTodos.length) return new Map();
+    
+    const positions = new Map<number, { x: number; y: number }>();
+    const dimensions = getTodoDimensions();
+    const padding = 20;
+    const startY = 120; // Below search bar
+    const gridCols = Math.floor((windowSize.width - padding * 2) / (dimensions.width + padding));
+    
+    filteredTodos.forEach((todo, index) => {
+      if (todo.id) {
+        const col = index % gridCols;
+        const row = Math.floor(index / gridCols);
+        positions.set(todo.id, {
+          x: padding + col * (dimensions.width + padding),
+          y: startY + row * (dimensions.height + padding)
+        });
+      }
+    });
+    
+    return positions;
+  }, [filteredTodos, getTodoDimensions, windowSize]);
+
+  const handleSearchSubmit = useCallback(() => {
+    if (searchSelectedTodos.size > 0) {
+      // Highlight only selected todos
+      setHighlightedTodos(new Set(searchSelectedTodos));
+    } else {
+      // Highlight all filtered todos
+      const allFilteredIds = new Set(filteredTodos.map(todo => todo.id).filter(Boolean) as number[]);
+      setHighlightedTodos(allFilteredIds);
+    }
+    closeSearch();
+  }, [searchSelectedTodos, filteredTodos, closeSearch]);
+
+  const toggleSearchTodoSelection = useCallback((todoId: number) => {
+    setSearchSelectedTodos(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(todoId)) {
+        newSet.delete(todoId);
+      } else {
+        newSet.add(todoId);
+      }
+      return newSet;
+    });
+  }, []);
+
   // Memoize dimensions for performance
   const todoDimensions = useMemo(() => getTodoDimensions(), [getTodoDimensions]);
 
@@ -427,6 +656,72 @@ function App() {
   useEffect(() => {
     fetchTodos();
   }, [fetchTodos]);
+
+  // Clear highlights when clicking elsewhere (except during search)
+  const clearHighlights = useCallback(() => {
+    if (!showSearch) {
+      setHighlightedTodos(new Set());
+    }
+  }, [showSearch]);
+
+  // Add event listener for click to clear highlights
+  useEffect(() => {
+    if (showSearch) return; // Don't add listener if search is open
+
+    const handleClick = (event: MouseEvent) => {
+      // Check if click is outside of todos and search
+      const isClickInsideTodos = (event.target as HTMLElement).closest('.floating-todo') !== null;
+      const isClickInsideSearch = (event.target as HTMLElement).closest('.search-bar') !== null;
+      
+      if (!isClickInsideTodos && !isClickInsideSearch) {
+        clearHighlights();
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => {
+      document.removeEventListener('click', handleClick);
+    };
+  }, [clearHighlights, showSearch]);
+
+  // Add event handlers for search input
+  const handleSearchKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleSearchSubmit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeSearch();
+    }
+  }, [handleSearchSubmit, closeSearch]);
+
+  // Keyboard event handling (after all functions are defined)
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Spacebar to open search
+      if (event.key === ' ' && 
+          !showModal && !showSearch &&
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        openSearch();
+      }
+      
+      // ESC key to close search
+      if (event.key === 'Escape' && showSearch) {
+        const target = event.target as HTMLElement;
+        const isSearchInput = target.matches('.search-input');
+        if (!isSearchInput || searchQuery.trim() === '') {
+          closeSearch();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [showModal, showSearch, searchQuery, openSearch, closeSearch]);
 
   if (loading) {
     return <div className="loading">Loading todos...</div>;
@@ -448,10 +743,13 @@ function App() {
       
       {/* Floating Todos */}
       {sortedTodos.map(todo => {
+        const isHighlighted = highlightedTodos.has(todo.id || 0);
+        const shouldShowInSearch = showSearch && searchQuery.trim() && filteredTodos.some(ft => ft.id === todo.id);
+        
         return (
           <div
             key={todo.id}
-            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''}`}
+            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''} ${isHighlighted ? 'highlighted' : ''} ${showSearch && !shouldShowInSearch ? 'search-hidden' : ''}`}
             style={{
               left: todo.position.x,
               top: todo.position.y,
@@ -460,9 +758,14 @@ function App() {
               zIndex: todo.zIndex || 1000
             }}
             onMouseDown={(e) => handleMouseDown(e, todo)}
-            onDoubleClick={() => handleDoubleClick(todo)}
             onMouseEnter={() => setHoveredTodoId(todo.id || null)}
             onMouseLeave={() => setHoveredTodoId(null)}
+            onClick={() => {
+              // Clear highlights when clicking a todo outside of search
+              if (!showSearch && highlightedTodos.size > 0) {
+                setHighlightedTodos(new Set());
+              }
+            }}
           >
             <div className="floating-todo-content">
               <div className="floating-todo-title">{todo.title}</div>
@@ -505,7 +808,7 @@ function App() {
           <div className="empty-state-content">
             <div className="empty-state-title">Your floating workspace awaits</div>
             <div className="empty-state-subtitle">Press N to create your first floating task</div>
-            <div className="empty-state-hint">Press X to complete • Double-click to delete • Press D for debug</div>
+            <div className="empty-state-hint">Press X to complete • Backspace to delete • Spacebar to search • Press D for debug</div>
           </div>
         </div>
       )}
@@ -575,6 +878,54 @@ function App() {
           </div>
         </div>
         </>
+      )}
+
+      {/* Search bar */}
+      {showSearch && (
+        <div className={`search-bar ${searchClosing ? 'closing' : ''}`}>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search todos..."
+            className="search-input"
+            onKeyDown={handleSearchKeyDown}
+          />
+          <button onClick={closeSearch} className="search-close-button">✕</button>
+        </div>
+      )}
+
+      {/* Search results grid */}
+      {showSearch && filteredTodos.length > 0 && (
+        <div className="search-results-grid">
+          {filteredTodos.map(todo => {
+            const isSelected = searchSelectedTodos.has(todo.id || 0);
+            const position = searchGridPositions.get(todo.id || 0);
+            
+            return (
+              <div
+                key={todo.id}
+                className={`search-result-item ${isSelected ? 'selected' : ''}`}
+                style={{
+                  left: position?.x,
+                  top: position?.y,
+                  width: todoDimensions.width,
+                  height: todoDimensions.height,
+                  zIndex: 1000
+                }}
+                onClick={() => toggleSearchTodoSelection(todo.id || 0)}
+              >
+                <div className="search-result-content">
+                  <div className="search-result-title">{todo.title}</div>
+                  {todo.description && (
+                    <div className="search-result-description">{todo.description}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
