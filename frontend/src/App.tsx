@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './App.css';
 
 interface Todo {
@@ -43,7 +43,14 @@ function App() {
   // Track last known mouse position
   const lastMousePosition = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
-  const fetchTodos = async () => {
+  // Calculate dynamic todo dimensions based on window size (memoized)
+  const getTodoDimensions = useCallback(() => {
+    const width = Math.max(200, Math.min(350, windowSize.width * 0.25));
+    const height = Math.max(100, Math.min(200, windowSize.height * 0.15));
+    return { width, height };
+  }, [windowSize.width, windowSize.height]);
+
+  const fetchTodos = useCallback(async () => {
     try {
       console.log('Fetching todos from:', API_BASE_URL);
       const response = await fetch(API_BASE_URL);
@@ -54,8 +61,7 @@ function App() {
       console.log('Fetched todos:', data);
       
       // Calculate dynamic todo size based on window size
-      const todoWidth = Math.max(200, Math.min(350, windowSize.width * 0.25));
-      const todoHeight = Math.max(100, Math.min(200, windowSize.height * 0.15));
+      const dimensions = getTodoDimensions();
       
       // Convert to floating todos with positions from backend or random if not set
       const floatingTodos: FloatingTodo[] = data.map((todo: any, index: number) => {
@@ -65,8 +71,8 @@ function App() {
           position = { x: todo.position_x, y: todo.position_y };
         } else {
           position = {
-            x: Math.random() * (windowSize.width - todoWidth) + 50,
-            y: Math.random() * (windowSize.height - todoHeight) + 50
+            x: Math.random() * (windowSize.width - dimensions.width) + 50,
+            y: Math.random() * (windowSize.height - dimensions.height) + 50
           };
         }
         
@@ -83,7 +89,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [windowSize.width, windowSize.height, getTodoDimensions]);
 
   // Window resize handler
   useEffect(() => {
@@ -95,14 +101,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Calculate dynamic todo dimensions based on window size
-  const getTodoDimensions = () => {
-    const width = Math.max(200, Math.min(350, windowSize.width * 0.25));
-    const height = Math.max(100, Math.min(200, windowSize.height * 0.15));
-    return { width, height };
-  };
-
-  const toggleTodo = async (id: number) => {
+  const toggleTodo = useCallback(async (id: number) => {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
 
@@ -141,10 +140,10 @@ function App() {
       // Clear updating state
       setUpdatingTodoId(null);
     }
-  };
+  }, [todos]);
 
   // Dragging functionality
-  const handleMouseDown = (event: React.MouseEvent, todo: FloatingTodo) => {
+  const handleMouseDown = useCallback((event: React.MouseEvent, todo: FloatingTodo) => {
     if (!todo.id) return;
     
     // Calculate offset based on current todo position and mouse position
@@ -163,9 +162,9 @@ function App() {
     ));
     
     event.preventDefault();
-  };
+  }, [highestZIndex]);
 
-  const handleMouseMove = (event: MouseEvent) => {
+  const handleMouseMove = useCallback((event: MouseEvent) => {
     if (!isDragging || !selectedTodoId) return;
     
     // Get current window dimensions directly from the DOM
@@ -173,8 +172,7 @@ function App() {
     const currentWindowHeight = window.innerHeight;
     
     // Calculate fresh dimensions for this drag operation
-    const todoWidth = Math.max(200, Math.min(350, currentWindowWidth * 0.25));
-    const todoHeight = Math.max(100, Math.min(200, currentWindowHeight * 0.15));
+    const dimensions = getTodoDimensions();
     
     const newPosition = {
       x: event.clientX - dragOffset.x,
@@ -183,8 +181,8 @@ function App() {
     
     // Keep within screen bounds using fresh dimensions
     const boundedPosition = {
-      x: Math.max(0, Math.min(currentWindowWidth - todoWidth, newPosition.x)),
-      y: Math.max(0, Math.min(currentWindowHeight - todoHeight, newPosition.y))
+      x: Math.max(0, Math.min(currentWindowWidth - dimensions.width, newPosition.x)),
+      y: Math.max(0, Math.min(currentWindowHeight - dimensions.height, newPosition.y))
     };
     
     setTodos(prev => prev.map(todo => 
@@ -192,9 +190,9 @@ function App() {
         ? { ...todo, position: boundedPosition }
         : todo
     ));
-  };
+  }, [isDragging, selectedTodoId, dragOffset, getTodoDimensions]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     // Save position to backend if we were dragging
     if (isDragging && selectedTodoId) {
       const todo = todos.find(t => t.id === selectedTodoId);
@@ -205,9 +203,9 @@ function App() {
     
     setIsDragging(false);
     setSelectedTodoId(null);
-  };
+  }, [isDragging, selectedTodoId, todos]);
 
-  const updateTodoPosition = async (id: number, position: { x: number; y: number }) => {
+  const updateTodoPosition = useCallback(async (id: number, position: { x: number; y: number }) => {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
 
@@ -226,9 +224,9 @@ function App() {
     } catch (error) {
       console.error('Failed to update todo position:', error);
     }
-  };
+  }, [todos]);
 
-  const handleDoubleClick = async (todo: FloatingTodo) => {
+  const handleDoubleClick = useCallback(async (todo: FloatingTodo) => {
     if (!todo.id) return;
     
     try {
@@ -244,7 +242,7 @@ function App() {
     } catch (error) {
       console.error('Failed to delete todo:', error);
     }
-  };
+  }, [todos]);
 
   // Add global mouse event listeners for dragging
   useEffect(() => {
@@ -316,7 +314,7 @@ function App() {
     };
   }, [showModal, todos, isDragging, hoveredTodoId]);
 
-  const openModal = () => {
+  const openModal = useCallback(() => {
     // Use last known mouse position
     const position = {
       x: lastMousePosition.current.x,
@@ -327,9 +325,9 @@ function App() {
     setModalStep('title');
     setModalTitle('');
     setModalDescription('');
-  };
+  }, []);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setModalClosing(true);
     
     // Wait for animation to complete before hiding modal
@@ -340,15 +338,15 @@ function App() {
       setModalTitle('');
       setModalDescription('');
     }, 300); // Match the animation duration
-  };
+  }, []);
 
-  const handleModalNext = () => {
+  const handleModalNext = useCallback(() => {
     if (modalStep === 'title' && modalTitle.trim()) {
       setModalStep('description');
     }
-  };
+  }, [modalStep, modalTitle]);
 
-  const handleModalSubmit = async () => {
+  const handleModalSubmit = useCallback(async () => {
     if (!modalTitle.trim()) return;
 
     try {
@@ -386,7 +384,7 @@ function App() {
       };
       
       setHighestZIndex(prev => prev + 1);
-      setTodos([...todos, newFloatingTodo]);
+      setTodos(prev => [...prev, newFloatingTodo]);
       
       // Use closing animation
       setModalClosing(true);
@@ -400,9 +398,9 @@ function App() {
     } catch (error) {
       console.error('Failed to add todo:', error);
     }
-  };
+  }, [modalTitle, modalDescription, modalPosition, windowSize, getTodoDimensions, highestZIndex]);
 
-  const handleModalKeyDown = (event: React.KeyboardEvent, inputType: 'title' | 'description') => {
+  const handleModalKeyDown = useCallback((event: React.KeyboardEvent, inputType: 'title' | 'description') => {
     if (event.key === 'Enter') {
       event.preventDefault();
       if (inputType === 'title' && modalTitle.trim()) {
@@ -416,11 +414,19 @@ function App() {
       event.stopPropagation();
       closeModal();
     }
-  };
+  }, [modalTitle, handleModalNext, handleModalSubmit, closeModal]);
+
+  // Memoize dimensions for performance
+  const todoDimensions = useMemo(() => getTodoDimensions(), [getTodoDimensions]);
+
+  // Memoize sorted todos for consistent z-index rendering
+  const sortedTodos = useMemo(() => {
+    return [...todos].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  }, [todos]);
 
   useEffect(() => {
     fetchTodos();
-  }, []);
+  }, [fetchTodos]);
 
   if (loading) {
     return <div className="loading">Loading todos...</div>;
@@ -434,15 +440,14 @@ function App() {
       {showDebugMode && (
         <div className="debug-info">
           <div>Window: {windowSize.width}x{windowSize.height}</div>
-          <div>Todo size: {getTodoDimensions().width}x{getTodoDimensions().height}</div>
+          <div>Todo size: {todoDimensions.width}x{todoDimensions.height}</div>
           <div>Todos: {todos.length}</div>
           <div>Press D to toggle debug</div>
         </div>
       )}
       
       {/* Floating Todos */}
-      {todos.map(todo => {
-        const dimensions = getTodoDimensions();
+      {sortedTodos.map(todo => {
         return (
           <div
             key={todo.id}
@@ -450,8 +455,8 @@ function App() {
             style={{
               left: todo.position.x,
               top: todo.position.y,
-              width: dimensions.width,
-              minHeight: dimensions.height,
+              width: todoDimensions.width,
+              minHeight: todoDimensions.height,
               zIndex: todo.zIndex || 1000
             }}
             onMouseDown={(e) => handleMouseDown(e, todo)}
@@ -478,8 +483,8 @@ function App() {
                 <div 
                   className="debug-rectangle"
                   style={{
-                    width: dimensions.width,
-                    height: dimensions.height
+                    width: todoDimensions.width,
+                    height: todoDimensions.height
                   }}
                 />
                 <div className="debug-coordinates">
