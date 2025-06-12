@@ -154,9 +154,28 @@ body {
   box-shadow: 
     0 16px 48px rgba(0, 150, 255, 0.2),
     0 6px 16px rgba(0, 100, 200, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 0 0 2px rgba(255, 150, 100, 0.3); /* Enhanced repulsion indicator */
   border-color: rgba(100, 180, 255, 0.4);
   will-change: transform; /* Optimize dragging performance */
+  animation: repulsionPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes repulsionPulse {
+  0%, 100% {
+    box-shadow: 
+      0 16px 48px rgba(0, 150, 255, 0.2),
+      0 6px 16px rgba(0, 100, 200, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 0 0 2px rgba(255, 150, 100, 0.3);
+  }
+  50% {
+    box-shadow: 
+      0 20px 60px rgba(0, 150, 255, 0.25),
+      0 8px 20px rgba(0, 100, 200, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 0 0 3px rgba(255, 150, 100, 0.5);
+  }
 }
 
 .floating-todo.updating {
@@ -305,6 +324,251 @@ body {
 .floating-empty-state.closing {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.95);
+}
+
+/* Search Bar Styles - Frutiger Aero Glass */
+.search-bar {
+  position: fixed;
+  top: min(30px, 3vh);
+  left: 50vw;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(240, 248, 255, 0.85) 25%,
+    rgba(225, 245, 254, 0.9) 50%,
+    rgba(240, 248, 255, 0.85) 75%,
+    rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: blur(25px) saturate(1.8) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50px;
+  box-shadow: 
+    0 8px 32px rgba(0, 150, 255, 0.15),
+    0 2px 8px rgba(255, 255, 255, 0.4) inset,
+    0 -1px 2px rgba(0, 100, 200, 0.1) inset;
+  width: min(420px, 90vw);
+  height: 56px;
+  padding: 0;
+  animation: slideInAero 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: 10002;
+  cursor: none;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.search-bar.closing {
+  animation: slideOutAero 0.3s ease-in forwards;
+}
+
+.search-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, 
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    rgba(0, 150, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.1) 70%,
+    transparent 100%);
+  border-radius: 50px;
+  pointer-events: none;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.search-input {
+  width: 100%;
+  height: 100%;
+  padding: 0 24px 0 24px;
+  border: none;
+  border-radius: 50px;
+  font-size: 15px;
+  font-weight: 400;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Display', sans-serif;
+  background: transparent;
+  color: rgba(0, 80, 120, 0.9);
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  resize: none;
+  outline: none;
+  cursor: none;
+  caret-color: rgba(0, 150, 255, 0.8);
+  text-align: left;
+  z-index: 2;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input:focus {
+  background: transparent;
+  color: rgba(0, 60, 100, 1);
+  caret-color: rgba(0, 150, 255, 1);
+}
+
+.search-input::placeholder {
+  color: rgba(0, 120, 180, 0.4);
+  font-size: 13px;
+  font-weight: 300;
+}
+
+.search-close-button {
+  position: absolute;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(0, 80, 120, 0.6);
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 3;
+}
+
+.search-close-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: rgba(0, 80, 120, 0.8);
+  transform: scale(1.1);
+}
+
+/* Search Results Grid */
+.search-results-grid {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(8px) saturate(1.2);
+  animation: fadeInAero 0.3s ease-out;
+}
+
+.search-result-item {
+  position: absolute;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(245, 252, 255, 0.95) 25%,
+    rgba(235, 248, 255, 0.97) 50%,
+    rgba(245, 252, 255, 0.95) 75%,
+    rgba(255, 255, 255, 0.98) 100%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(100, 180, 255, 0.3);
+  border-radius: 20px;
+  box-shadow: 
+    0 12px 40px rgba(0, 150, 255, 0.15),
+    0 4px 12px rgba(0, 100, 200, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  pointer-events: auto;
+  animation: searchItemAppear 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.search-result-item:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 16px 48px rgba(0, 150, 255, 0.2),
+    0 6px 16px rgba(0, 100, 200, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(100, 180, 255, 0.4);
+}
+
+.search-result-item.selected {
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(240, 250, 255, 0.95) 25%,
+    rgba(220, 240, 255, 0.97) 50%,
+    rgba(240, 250, 255, 0.95) 75%,
+    rgba(255, 255, 255, 0.98) 100%);
+  border-color: rgba(0, 150, 255, 0.5);
+  box-shadow: 
+    0 16px 48px rgba(0, 150, 255, 0.25),
+    0 6px 16px rgba(0, 100, 200, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 2px rgba(0, 150, 255, 0.3);
+}
+
+.search-result-content {
+  position: relative;
+  z-index: 2;
+  padding: 20px;
+}
+
+.search-result-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(0, 80, 120, 0.95);
+  line-height: 1.4;
+  margin-bottom: 8px;
+  word-wrap: break-word;
+}
+
+.search-result-description {
+  font-size: 13px;
+  color: rgba(0, 80, 120, 0.7);
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+/* Highlighted todos */
+.floating-todo.highlighted {
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 100, 0.95) 0%,
+    rgba(255, 248, 170, 0.9) 25%,
+    rgba(255, 245, 140, 0.92) 50%,
+    rgba(255, 248, 170, 0.9) 75%,
+    rgba(255, 255, 100, 0.95) 100%);
+  border-color: rgba(255, 200, 0, 0.4);
+  box-shadow: 
+    0 12px 40px rgba(255, 200, 0, 0.2),
+    0 4px 12px rgba(255, 180, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 0 0 2px rgba(255, 200, 0, 0.3);
+  animation: highlightPulse 2s ease-in-out infinite;
+}
+
+@keyframes searchItemAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 
+      0 12px 40px rgba(255, 200, 0, 0.2),
+      0 4px 12px rgba(255, 180, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      0 0 0 2px rgba(255, 200, 0, 0.3);
+  }
+  50% {
+    box-shadow: 
+      0 16px 48px rgba(255, 200, 0, 0.3),
+      0 6px 16px rgba(255, 180, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 0 0 3px rgba(255, 200, 0, 0.5);
+  }
 }
 
 /* Animations */
@@ -570,12 +834,12 @@ body {
 @keyframes slideInAero {
   from {
     opacity: 0;
-    transform: scale(0.85) translateY(-15px);
+    transform: translateX(-50%) scale(0.85) translateY(-15px);
     filter: blur(1px);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateX(-50%) scale(1) translateY(0);
     filter: blur(0px);
   }
 }
@@ -661,12 +925,12 @@ body {
 @keyframes slideOutAero {
   from {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateX(-50%) scale(1) translateY(0);
     filter: blur(0px);
   }
   to {
     opacity: 0;
-    transform: scale(0.85) translateY(10px);
+    transform: translateX(-50%) scale(0.85) translateY(10px);
     filter: blur(1px);
   }
 }
@@ -697,6 +961,16 @@ body {
     opacity: 0;
     filter: blur(0px);
   }
+}
+
+/* Search hidden todos - behind frosted glass */
+.floating-todo.search-hidden {
+  opacity: 0.3;
+  filter: blur(2px) brightness(0.8);
+  transform: scale(0.95);
+  z-index: 50 !important; /* Behind search results */
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 
