@@ -330,7 +330,7 @@ body {
 .search-bar {
   position: fixed;
   top: min(30px, 3vh);
-  left: 50vw;
+  left: 50%;
   transform: translateX(-50%);
   background: linear-gradient(135deg, 
     rgba(255, 255, 255, 0.9) 0%,
@@ -349,7 +349,7 @@ body {
   width: min(420px, 90vw);
   height: 56px;
   padding: 0;
-  animation: slideInAero 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  animation: slideInSearch 0.4s cubic-bezier(0.23, 1, 0.32, 1);
   z-index: 10002;
   cursor: none;
   display: flex;
@@ -359,7 +359,7 @@ body {
 }
 
 .search-bar.closing {
-  animation: slideOutAero 0.3s ease-in forwards;
+  animation: slideOutSearch 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }
 
 .search-bar::before {
@@ -834,6 +834,20 @@ body {
 @keyframes slideInAero {
   from {
     opacity: 0;
+    transform: scale(0.85) translateY(-15px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+/* Search-specific animations that work with translateX(-50%) */
+@keyframes slideInSearch {
+  from {
+    opacity: 0;
     transform: translateX(-50%) scale(0.85) translateY(-15px);
     filter: blur(1px);
   }
@@ -841,6 +855,19 @@ body {
     opacity: 1;
     transform: translateX(-50%) scale(1) translateY(0);
     filter: blur(0px);
+  }
+}
+
+@keyframes slideOutSearch {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) scale(1) translateY(0);
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.85) translateY(10px);
+    filter: blur(1px);
   }
 }
 
@@ -925,12 +952,12 @@ body {
 @keyframes slideOutAero {
   from {
     opacity: 1;
-    transform: translateX(-50%) scale(1) translateY(0);
+    transform: scale(1) translateY(0);
     filter: blur(0px);
   }
   to {
     opacity: 0;
-    transform: translateX(-50%) scale(0.85) translateY(10px);
+    transform: scale(0.85) translateY(10px);
     filter: blur(1px);
   }
 }
@@ -971,6 +998,18 @@ body {
   z-index: 50 !important; /* Behind search results */
   pointer-events: none;
   transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Lasso selection styles */
+.lassoed {
+  border: 3px solid #4a90e2 !important;
+  box-shadow: 0 0 15px rgba(74, 144, 226, 0.5) !important;
+  transform: scale(0.98);
+}
+
+.lasso-overlay {
+  pointer-events: none;
+  z-index: 10000;
 }
 
 

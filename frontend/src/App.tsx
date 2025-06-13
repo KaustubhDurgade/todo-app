@@ -48,6 +48,30 @@ function App() {
   const [highlightedTodos, setHighlightedTodos] = useState<Set<number>>(new Set());
   const searchInputRef = useRef<HTMLInputElement>(null);
   
+  // Lasso tool state
+  const [isLassoing, setIsLassoing] = useState(false);
+  const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[]>([]);
+  const [lassoedTodos, setLassoedTodos] = useState<Set<number>>(new Set());
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const [initialDragPositions, setInitialDragPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
+  
+  // Undo/Redo state
+  interface UndoAction {
+    type: 'create' | 'delete' | 'toggle';
+    todo: FloatingTodo;
+    previousState?: boolean; // For toggle actions
+  }
+  
+  const [undoHistory, setUndoHistory] = useState<UndoAction[]>([]);
+  const [redoHistory, setRedoHistory] = useState<UndoAction[]>([]);
+  const MAX_HISTORY_SIZE = 50;
+  
+  // Momentum/inertia tracking
+  const [todoMomentum, setTodoMomentum] = useState<Map<number, { vx: number; vy: number; animationId?: number }>>(new Map());
+  const mouseVelocity = useRef({ x: 0, y: 0 });
+  const lastMouseTime = useRef(Date.now());
+  const lastMousePos = useRef({ x: 0, y: 0 });
+  
   // Track last known mouse position
   const lastMousePosition = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
@@ -61,12 +85,250 @@ function App() {
   const DRAG_REPULSION_RADIUS = 250; // Larger radius when dragging
   const REPULSION_SMOOTHING = 0.1; // How quickly tasks move apart (0-1)
 
+  // Physics constants for momentum/inertia
+  const MOMENTUM_FRICTION = 0.92; // How quickly momentum decays (0-1, closer to 1 = less friction)
+  const MOMENTUM_MIN_SPEED = 0.5; // Minimum speed before momentum stops
+  const MOMENTUM_SCALE = 0.3; // How much of the mouse velocity to apply as momentum
+  const VELOCITY_SMOOTHING = 0.7; // Smoothing factor for velocity calculation
+
+  // Lasso utility functions
+  const pointInPolygon = useCallback((point: { x: number; y: number }, polygon: { x: number; y: number }[]) => {
+    if (polygon.length < 3) return false;
+    
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      if (((polygon[i].y > point.y) !== (polygon[j].y > point.y)) &&
+          (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }, []);
+
+  const getTodoCenter = useCallback((todo: FloatingTodo) => {
+    return {
+      x: todo.position.x + 150, // Half of todo width (300px)
+      y: todo.position.y + 75   // Half of todo height (150px)
+    };
+  }, []);
+
+  const clearLassoSelection = useCallback(() => {
+    setLassoedTodos(new Set());
+    setIsLassoing(false);
+    setLassoPath([]);
+  }, []);
+
+  // Returns 8 points: 4 corners + 4 edge midpoints
+  const getTodoBoundingPoints = useCallback((todo: FloatingTodo) => {
+    const x = todo.position.x;
+    const y = todo.position.y;
+    const w = 300; // width
+    const h = 150; // height
+    return [
+      { x, y }, // top-left
+      { x: x + w, y }, // top-right
+      { x, y: y + h }, // bottom-left
+      { x: x + w, y: y + h }, // bottom-right
+      { x: x + w / 2, y }, // top-mid
+      { x: x + w / 2, y: y + h }, // bottom-mid
+      { x, y: y + h / 2 }, // left-mid
+      { x: x + w, y: y + h / 2 }, // right-mid
+    ];
+  }, []);
+
+  // Undo/Redo helper functions
+  const addUndoAction = useCallback((action: UndoAction) => {
+    setUndoHistory(prev => {
+      const newHistory = [...prev, action];
+      if (newHistory.length > MAX_HISTORY_SIZE) {
+        newHistory.shift(); // Remove oldest action
+      }
+      return newHistory;
+    });
+    // Clear redo history when new action is performed
+    setRedoHistory([]);
+  }, []);
+
+  const performUndo = useCallback(async () => {
+    if (undoHistory.length === 0) return;
+    
+    const lastAction = undoHistory[undoHistory.length - 1];
+    
+    try {
+      if (lastAction.type === 'create') {
+        // Undo create: delete the todo
+        const response = await fetch(`${API_BASE_URL}${lastAction.todo.id}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          setTodos(prev => prev.filter(t => t.id !== lastAction.todo.id));
+        }
+      } else if (lastAction.type === 'delete') {
+        // Undo delete: recreate the todo
+        const response = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: lastAction.todo.title,
+            description: lastAction.todo.description,
+            completed: lastAction.todo.completed,
+            position_x: lastAction.todo.position.x,
+            position_y: lastAction.todo.position.y
+          }),
+        });
+        if (response.ok) {
+          const newTodo = await response.json();
+          setTodos(prev => [...prev, {
+            ...newTodo,
+            position: lastAction.todo.position,
+            zIndex: highestZIndex + 1
+          }]);
+          setHighestZIndex(prev => prev + 1);
+        }
+      } else if (lastAction.type === 'toggle') {
+        // Undo toggle: restore previous completion state
+        const newCompleted = lastAction.previousState!;
+        const response = await fetch(`${API_BASE_URL}${lastAction.todo.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completed: newCompleted }),
+        });
+        if (response.ok) {
+          setTodos(prev => prev.map(t => 
+            t.id === lastAction.todo.id ? { ...t, completed: newCompleted } : t
+          ));
+        }
+      }
+      
+      // Move action to redo history
+      setRedoHistory(prev => [...prev, lastAction]);
+      setUndoHistory(prev => prev.slice(0, -1));
+    } catch (error) {
+      console.error('Undo failed:', error);
+    }
+  }, [undoHistory, highestZIndex]);
+
+  const performRedo = useCallback(async () => {
+    if (redoHistory.length === 0) return;
+    
+    const lastRedoAction = redoHistory[redoHistory.length - 1];
+    
+    try {
+      if (lastRedoAction.type === 'create') {
+        // Redo create: recreate the todo
+        const response = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: lastRedoAction.todo.title,
+            description: lastRedoAction.todo.description,
+            completed: lastRedoAction.todo.completed,
+            position_x: lastRedoAction.todo.position.x,
+            position_y: lastRedoAction.todo.position.y
+          }),
+        });
+        if (response.ok) {
+          const newTodo = await response.json();
+          setTodos(prev => [...prev, {
+            ...newTodo,
+            position: lastRedoAction.todo.position,
+            zIndex: highestZIndex + 1
+          }]);
+          setHighestZIndex(prev => prev + 1);
+        }
+      } else if (lastRedoAction.type === 'delete') {
+        // Redo delete: delete the todo again
+        const response = await fetch(`${API_BASE_URL}${lastRedoAction.todo.id}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          setTodos(prev => prev.filter(t => t.id !== lastRedoAction.todo.id));
+        }
+      } else if (lastRedoAction.type === 'toggle') {
+        // Redo toggle: toggle to the new state
+        const newCompleted = !lastRedoAction.previousState!;
+        const response = await fetch(`${API_BASE_URL}${lastRedoAction.todo.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completed: newCompleted }),
+        });
+        if (response.ok) {
+          setTodos(prev => prev.map(t => 
+            t.id === lastRedoAction.todo.id ? { ...t, completed: newCompleted } : t
+          ));
+        }
+      }
+      
+      // Move action back to undo history
+      setUndoHistory(prev => [...prev, lastRedoAction]);
+      setRedoHistory(prev => prev.slice(0, -1));
+    } catch (error) {
+      console.error('Redo failed:', error);
+    }
+  }, [redoHistory, highestZIndex]);
+
   // Calculate dynamic todo dimensions based on window size (memoized)
   const getTodoDimensions = useCallback(() => {
     const width = Math.max(200, Math.min(350, windowSize.width * 0.25));
     const height = Math.max(100, Math.min(200, windowSize.height * 0.15));
     return { width, height };
   }, [windowSize.width, windowSize.height]);
+
+  // Generate test todos for debugging
+  const generateTestTodos = useCallback(async () => {
+    const testTodos = [
+      { title: "Buy groceries", description: "Milk, eggs, bread, and coffee" },
+      { title: "Walk the dog", description: "30 minute walk around the neighborhood" },
+      { title: "Finish presentation", description: "Complete slides for Monday meeting" },
+      { title: "Call dentist", description: "Schedule cleaning appointment" },
+      { title: "Read a book", description: "Continue reading 'The Great Gatsby'" },
+      { title: "Exercise", description: "45 minutes cardio and strength training" },
+      { title: "Plan vacation", description: "Research destinations for summer trip" },
+      { title: "Fix sink", description: "Replace leaky faucet in kitchen" },
+      { title: "Learn TypeScript", description: "Complete online course modules" },
+      { title: "Write journal", description: "Daily reflection and gratitude notes" }
+    ];
+
+    const dimensions = getTodoDimensions();
+    
+    try {
+      for (const todo of testTodos) {
+        const position = {
+          x: Math.random() * (windowSize.width - dimensions.width),
+          y: Math.random() * (windowSize.height - dimensions.height)
+        };
+
+        const response = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: todo.title,
+            description: todo.description,
+            completed: Math.random() > 0.7, // 30% chance of being completed
+            position_x: position.x,
+            position_y: position.y,
+          }),
+        });
+
+        if (response.ok) {
+          const newTodo = await response.json();
+          const newFloatingTodo: FloatingTodo = {
+            ...newTodo,
+            position: position,
+            zIndex: highestZIndex + 1
+          };
+          
+          setHighestZIndex(prev => prev + 1);
+          setTodos(prev => [...prev, newFloatingTodo]);
+          
+          // Add small delay between creations for visual effect
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate test todos:', error);
+    }
+  }, [getTodoDimensions, windowSize, highestZIndex]);
 
   // Calculate repulsion force between two todos
   const calculateRepulsionBetweenTodos = useCallback((
@@ -219,46 +481,204 @@ function App() {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
 
-    // Set updating state for visual feedback
-    setUpdatingTodoId(id);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...todo,
-          completed: !todo.completed,
-          position_x: todo.position.x,
-          position_y: todo.position.y,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const updatedTodo = await response.json();
+    // If this todo is lassoed, toggle all lassoed todos
+    if (lassoedTodos.has(id)) {
+      const todosToToggle = todos.filter(t => t.id && lassoedTodos.has(t.id));
       
-      // Preserve position and zIndex data when updating
-      setTodos(todos.map(t => t.id === id ? {
-        ...updatedTodo,
-        position: t.position, // Keep original position
-        zIndex: t.zIndex      // Keep original zIndex
-      } : t));
-    } catch (error) {
-      console.error('Failed to toggle todo:', error);
-    } finally {
-      // Clear updating state
-      setUpdatingTodoId(null);
+      try {
+        // Toggle all lassoed todos
+        await Promise.all(todosToToggle.map(async (todoToToggle) => {
+          const previousCompleted = todoToToggle.completed;
+          
+          const response = await fetch(`${API_BASE_URL}${todoToToggle.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ...todoToToggle,
+              completed: !todoToToggle.completed,
+              position_x: todoToToggle.position.x,
+              position_y: todoToToggle.position.y,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const updatedTodo = await response.json();
+          
+          // Update state for this todo
+          setTodos(prev => prev.map(t => t.id === todoToToggle.id ? {
+            ...updatedTodo,
+            position: t.position, // Keep original position
+            zIndex: t.zIndex      // Keep original zIndex
+          } : t));
+
+          // Add undo action for toggle
+          addUndoAction({
+            type: 'toggle',
+            todo: { ...todoToToggle },
+            previousState: previousCompleted
+          });
+        }));
+        
+        // Clear lasso selection after toggling
+        clearLassoSelection();
+      } catch (error) {
+        console.error('Failed to toggle lassoed todos:', error);
+      }
+    } else {
+      // Toggle single todo
+      const previousCompleted = todo.completed;
+
+      // Set updating state for visual feedback
+      setUpdatingTodoId(id);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...todo,
+            completed: !todo.completed,
+            position_x: todo.position.x,
+            position_y: todo.position.y,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const updatedTodo = await response.json();
+        
+        // Preserve position and zIndex data when updating
+        setTodos(todos.map(t => t.id === id ? {
+          ...updatedTodo,
+          position: t.position, // Keep original position
+          zIndex: t.zIndex      // Keep original zIndex
+        } : t));
+
+        // Add undo action for toggle
+        addUndoAction({
+          type: 'toggle',
+          todo: { ...todo },
+          previousState: previousCompleted
+        });
+      } catch (error) {
+        console.error('Failed to toggle todo:', error);
+      } finally {
+        // Clear updating state
+        setUpdatingTodoId(null);
+      }
     }
-  }, [todos]);
+  }, [todos, addUndoAction, lassoedTodos, clearLassoSelection]);
+
+  // Apply momentum to a todo
+  const applyMomentum = useCallback((todoId: number, velocity: { x: number; y: number }) => {
+    if (!todoId) return;
+    
+    // Cancel any existing momentum animation for this todo
+    setTodoMomentum(prev => {
+      const current = prev.get(todoId);
+      if (current?.animationId) {
+        cancelAnimationFrame(current.animationId);
+      }
+      return prev;
+    });
+    
+    // Apply momentum scaling and ensure minimum threshold
+    const scaledVx = velocity.x * MOMENTUM_SCALE;
+    const scaledVy = velocity.y * MOMENTUM_SCALE;
+    const speed = Math.sqrt(scaledVx * scaledVx + scaledVy * scaledVy);
+    
+    if (speed < MOMENTUM_MIN_SPEED) return; // Too slow, no momentum
+    
+    let currentVx = scaledVx;
+    let currentVy = scaledVy;
+    
+    const animate = () => {
+      // Apply friction
+      currentVx *= MOMENTUM_FRICTION;
+      currentVy *= MOMENTUM_FRICTION;
+      
+      const currentSpeed = Math.sqrt(currentVx * currentVx + currentVy * currentVy);
+      
+      // Stop if too slow
+      if (currentSpeed < MOMENTUM_MIN_SPEED) {
+        setTodoMomentum(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(todoId);
+          return newMap;
+        });
+        return;
+      }
+      
+      // Update todo position
+      setTodos(prevTodos => {
+        return prevTodos.map(todo => {
+          if (todo.id === todoId) {
+            const dimensions = getTodoDimensions();
+            const newX = Math.max(0, Math.min(windowSize.width - dimensions.width, todo.position.x + currentVx));
+            const newY = Math.max(0, Math.min(windowSize.height - dimensions.height, todo.position.y + currentVy));
+            
+            return {
+              ...todo,
+              position: { x: newX, y: newY }
+            };
+          }
+          return todo;
+        });
+      });
+      
+      // Continue animation
+      const animationId = requestAnimationFrame(animate);
+      setTodoMomentum(prev => {
+        const newMap = new Map(prev);
+        newMap.set(todoId, { vx: currentVx, vy: currentVy, animationId });
+        return newMap;
+      });
+    };
+    
+    // Start animation
+    const animationId = requestAnimationFrame(animate);
+    setTodoMomentum(prev => {
+      const newMap = new Map(prev);
+      newMap.set(todoId, { vx: currentVx, vy: currentVy, animationId });
+      return newMap;
+    });
+  }, [getTodoDimensions, windowSize]);
 
   // Dragging functionality
   const handleMouseDown = useCallback((event: React.MouseEvent, todo: FloatingTodo) => {
     if (!todo.id) return;
+    
+    // Clear lasso selection when clicking on a todo (unless it's part of the lasso and we're not shift-clicking)
+    if (!lassoedTodos.has(todo.id) || !event.shiftKey) {
+      if (lassoedTodos.size > 0 && !lassoedTodos.has(todo.id)) {
+        clearLassoSelection();
+      }
+    }
+    
+    // Initialize mouse tracking for momentum
+    lastMouseTime.current = Date.now();
+    lastMousePos.current = { x: event.clientX, y: event.clientY };
+    mouseVelocity.current = { x: 0, y: 0 };
+    
+    // Cancel any existing momentum for this todo
+    setTodoMomentum(prev => {
+      const current = prev.get(todo.id!);
+      if (current?.animationId) {
+        cancelAnimationFrame(current.animationId);
+      }
+      const newMap = new Map(prev);
+      newMap.delete(todo.id!);
+      return newMap;
+    });
     
     // Calculate offset based on current todo position and mouse position
     setDragOffset({
@@ -267,6 +687,19 @@ function App() {
     });
     setSelectedTodoId(todo.id);
     setIsDragging(true);
+
+    // Store initial positions for group dragging
+    if (lassoedTodos.has(todo.id)) {
+      const initialPositions = new Map<number, { x: number; y: number }>();
+      todos.forEach(t => {
+        if (t.id && lassoedTodos.has(t.id)) {
+          initialPositions.set(t.id, { x: t.position.x, y: t.position.y });
+        }
+      });
+      setInitialDragPositions(initialPositions);
+    } else {
+      setInitialDragPositions(new Map());
+    }
     
     // Bring to front
     const newZIndex = highestZIndex + 1;
@@ -276,10 +709,60 @@ function App() {
     ));
     
     event.preventDefault();
-  }, [highestZIndex]);
+  }, [highestZIndex, lassoedTodos, clearLassoSelection, todos]);
 
   const handleMouseMove = useCallback((event: MouseEvent) => {
+    if (isLassoing) {
+      // Update lasso path
+      const newPoint = { x: event.clientX, y: event.clientY };
+      setLassoPath(prev => [...prev, newPoint]);
+      
+      // Check which todos are inside the lasso using the complete path including current point
+      const completePath = [...lassoPath, newPoint];
+      const newLassoedTodos = new Set<number>();
+      
+      // Add existing lassoed todos if shift is held
+      if (isShiftPressed) {
+        lassoedTodos.forEach(id => newLassoedTodos.add(id));
+      }
+      
+      todos.forEach(todo => {
+        if (todo.id) {
+          const points = getTodoBoundingPoints(todo);
+          if (points.some(pt => pointInPolygon(pt, completePath))) {
+            newLassoedTodos.add(todo.id);
+          }
+        }
+      });
+      
+      setLassoedTodos(newLassoedTodos);
+      return;
+    }
+    
     if (!isDragging || !selectedTodoId) return;
+    
+    // Calculate velocity for momentum
+    const currentTime = Date.now();
+    const deltaTime = currentTime - lastMouseTime.current;
+    
+    if (deltaTime > 0) {
+      const deltaX = event.clientX - lastMousePos.current.x;
+      const deltaY = event.clientY - lastMousePos.current.y;
+      
+      const currentVelocity = {
+        x: deltaX / deltaTime * 16.67, // Convert to pixels per frame (60fps)
+        y: deltaY / deltaTime * 16.67
+      };
+      
+      // Smooth velocity calculation
+      mouseVelocity.current = {
+        x: mouseVelocity.current.x * VELOCITY_SMOOTHING + currentVelocity.x * (1 - VELOCITY_SMOOTHING),
+        y: mouseVelocity.current.y * VELOCITY_SMOOTHING + currentVelocity.y * (1 - VELOCITY_SMOOTHING)
+      };
+    }
+    
+    lastMouseTime.current = currentTime;
+    lastMousePos.current = { x: event.clientX, y: event.clientY };
     
     // Get current window dimensions directly from the DOM
     const currentWindowWidth = window.innerWidth;
@@ -298,26 +781,37 @@ function App() {
       x: Math.max(0, Math.min(currentWindowWidth - dimensions.width, newPosition.x)),
       y: Math.max(0, Math.min(currentWindowHeight - dimensions.height, newPosition.y))
     };
-    
-    setTodos(prev => prev.map(todo => 
-      todo.id === selectedTodoId 
-        ? { ...todo, position: boundedPosition }
-        : todo
-    ));
-  }, [isDragging, selectedTodoId, dragOffset, getTodoDimensions]);
 
-  const handleMouseUp = useCallback(() => {
-    // Save position to backend if we were dragging
-    if (isDragging && selectedTodoId) {
-      const todo = todos.find(t => t.id === selectedTodoId);
-      if (todo) {
-        updateTodoPosition(selectedTodoId, todo.position);
+    // If this todo is lassoed, move all lassoed todos together
+    if (lassoedTodos.has(selectedTodoId) && initialDragPositions.size > 0) {
+      const selectedInitialPos = initialDragPositions.get(selectedTodoId);
+      if (selectedInitialPos) {
+        // Calculate delta from the selected todo's initial position
+        const deltaX = boundedPosition.x - selectedInitialPos.x;
+        const deltaY = boundedPosition.y - selectedInitialPos.y;
+        
+        setTodos(prev => prev.map(todo => {
+          if (todo.id && lassoedTodos.has(todo.id)) {
+            const initialPos = initialDragPositions.get(todo.id);
+            if (initialPos) {
+              const newPos = {
+                x: Math.max(0, Math.min(currentWindowWidth - dimensions.width, initialPos.x + deltaX)),
+                y: Math.max(0, Math.min(currentWindowHeight - dimensions.height, initialPos.y + deltaY))
+              };
+              return { ...todo, position: newPos };
+            }
+          }
+          return todo;
+        }));
       }
+    } else {
+      setTodos(prev => prev.map(todo => 
+        todo.id === selectedTodoId 
+          ? { ...todo, position: boundedPosition }
+          : todo
+      ));
     }
-    
-    setIsDragging(false);
-    setSelectedTodoId(null);
-  }, [isDragging, selectedTodoId, todos]);
+  }, [isDragging, selectedTodoId, dragOffset, getTodoDimensions, isLassoing, lassoPath, setLassoPath, todos, getTodoCenter, pointInPolygon, lassoedTodos, isShiftPressed, initialDragPositions]);
 
   const updateTodoPosition = useCallback(async (id: number, position: { x: number; y: number }) => {
     const todo = todos.find(t => t.id === id);
@@ -340,23 +834,102 @@ function App() {
     }
   }, [todos]);
 
+  const handleMouseUp = useCallback(() => {
+    // Complete lasso selection
+    if (isLassoing) {
+      setIsLassoing(false);
+      setLassoPath([]);
+      return;
+    }
+    
+    // Save position to backend if we were dragging
+    if (isDragging && selectedTodoId) {
+      const todo = todos.find(t => t.id === selectedTodoId);
+      if (todo) {
+        // If dragging a lassoed todo, update positions for all lassoed todos
+        if (lassoedTodos.has(selectedTodoId)) {
+          lassoedTodos.forEach(todoId => {
+            const lassoedTodo = todos.find(t => t.id === todoId);
+            if (lassoedTodo) {
+              updateTodoPosition(todoId, lassoedTodo.position);
+            }
+          });
+        } else {
+          updateTodoPosition(selectedTodoId, todo.position);
+        }
+        
+        // Apply momentum based on mouse velocity
+        const speed = Math.sqrt(mouseVelocity.current.x ** 2 + mouseVelocity.current.y ** 2);
+        if (speed > MOMENTUM_MIN_SPEED) {
+          applyMomentum(selectedTodoId, mouseVelocity.current);
+        }
+      }
+    }
+    
+    // Reset dragging state and velocity
+    setIsDragging(false);
+    setSelectedTodoId(null);
+    setInitialDragPositions(new Map());
+    mouseVelocity.current = { x: 0, y: 0 };
+  }, [isDragging, selectedTodoId, todos, applyMomentum, isLassoing, lassoedTodos, updateTodoPosition]);
+
   const handleDoubleClick = useCallback(async (todo: FloatingTodo) => {
     if (!todo.id) return;
     
-    try {
-      const response = await fetch(`${API_BASE_URL}${todo.id}`, {
-        method: 'DELETE',
-      });
+    // If this todo is lassoed, delete all lassoed todos
+    if (lassoedTodos.has(todo.id)) {
+      const todosToDelete = todos.filter(t => t.id && lassoedTodos.has(t.id));
+      
+      try {
+        // Delete all lassoed todos
+        await Promise.all(todosToDelete.map(async (todoToDelete) => {
+          const response = await fetch(`${API_BASE_URL}${todoToDelete.id}`, {
+            method: 'DELETE',
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+        }));
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Remove from state
+        setTodos(prev => prev.filter(t => !t.id || !lassoedTodos.has(t.id)));
+        
+        // Add undo actions for all deleted todos
+        todosToDelete.forEach(deletedTodo => {
+          addUndoAction({
+            type: 'delete',
+            todo: { ...deletedTodo }
+          });
+        });
+        
+        // Clear lasso selection
+        clearLassoSelection();
+      } catch (error) {
+        console.error('Failed to delete lassoed todos:', error);
       }
+    } else {
+      // Delete single todo
+      try {
+        const response = await fetch(`${API_BASE_URL}${todo.id}`, {
+          method: 'DELETE',
+        });
 
-      setTodos(todos.filter(t => t.id !== todo.id));
-    } catch (error) {
-      console.error('Failed to delete todo:', error);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        setTodos(todos.filter(t => t.id !== todo.id));
+        
+        // Add undo action for delete
+        addUndoAction({
+          type: 'delete',
+          todo: { ...todo }
+        });
+      } catch (error) {
+        console.error('Failed to delete todo:', error);
+      }
     }
-  }, [todos]);
+  }, [todos, addUndoAction, lassoedTodos, clearLassoSelection]);
 
   // Add global mouse event listeners for dragging
   useEffect(() => {
@@ -394,20 +967,6 @@ function App() {
         }
       }
       
-      // Backspace key to delete the hovered todo
-      if (event.key === 'Backspace' && 
-          !showModal && 
-          !(event.target as HTMLElement).matches('input, textarea')) {
-        event.preventDefault();
-        // Only proceed if there's a hovered todo
-        if (hoveredTodoId) {
-          const todo = todos.find(t => t.id === hoveredTodoId);
-          if (todo) {
-            handleDoubleClick(todo);
-          }
-        }
-      }
-      
       // D key to toggle debug mode
       if (event.key.toLowerCase() === 'd' && 
           !showModal && 
@@ -416,31 +975,92 @@ function App() {
         setShowDebugMode(prev => !prev);
       }
       
-      // ESC key to close modal
-      if (event.key === 'Escape' && showModal) {
-        const target = event.target as HTMLElement;
-        const isModalInput = target.matches('.modal-input-minimal, .modal-textarea-minimal');
-        if (!isModalInput) {
-          closeModal();
+      // Cmd+Z for undo
+      if (event.key.toLowerCase() === 'z' && 
+          (event.metaKey || event.ctrlKey) && 
+          !event.shiftKey &&
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        performUndo();
+      }
+      
+      // Cmd+Shift+Z for redo
+      if (event.key.toLowerCase() === 'z' && 
+          (event.metaKey || event.ctrlKey) && 
+          event.shiftKey &&
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        performRedo();
+      }
+      
+      // T key to generate test todos (only in debug mode)
+      if (event.key.toLowerCase() === 't' && 
+          showDebugMode &&
+          !showModal && 
+          !(event.target as HTMLElement).matches('input, textarea')) {
+        event.preventDefault();
+        generateTestTodos();
+      }
+      
+      // ESC key to close modal or clear lasso selection
+      if (event.key === 'Escape') {
+        if (showModal) {
+          const target = event.target as HTMLElement;
+          const isModalInput = target.matches('.modal-input-minimal, .modal-textarea-minimal');
+          if (!isModalInput) {
+            closeModal();
+          }
+        } else if (lassoedTodos.size > 0) {
+          // Clear lasso selection if ESC is pressed
+          clearLassoSelection();
         }
+      }
+      
+      // Track shift key state for lasso functionality
+      if (event.key === 'Shift') {
+        setIsShiftPressed(true);
       }
     };
 
     const handleMouseMove = (event: MouseEvent) => {
       // Only track mouse when modal is not open and not dragging
       if (!showModal && !isDragging) {
-        lastMousePosition.current = { x: event.clientX, y: event.clientY };
+        lastMousePos.current = { x: event.clientX, y: event.clientY };
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      // Track shift key release for lasso functionality
+      if (event.key === 'Shift') {
+        setIsShiftPressed(false);
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
+    document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('mousemove', handleMouseMove);
     
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
+      document.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [showModal, showSearch, todos, isDragging, hoveredTodoId, toggleTodo, handleDoubleClick]);
+  }, [showModal, showSearch, todos, isDragging, hoveredTodoId, toggleTodo, handleDoubleClick, performUndo, performRedo, showDebugMode, generateTestTodos, clearLassoSelection, lassoedTodos]);
+
+  // Lasso mouse event listeners
+  useEffect(() => {
+    if (isLassoing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isLassoing, handleMouseMove, handleMouseUp]);
 
   // Continuous repulsion animation loop
   useEffect(() => {
@@ -463,8 +1083,8 @@ function App() {
   const openModal = useCallback(() => {
     // Use last known mouse position
     const position = {
-      x: lastMousePosition.current.x,
-      y: lastMousePosition.current.y
+      x: lastMousePos.current.x,
+      y: lastMousePos.current.y
     };
     setModalPosition(position);
     setShowModal(true);
@@ -532,6 +1152,12 @@ function App() {
       setHighestZIndex(prev => prev + 1);
       setTodos(prev => [...prev, newFloatingTodo]);
       
+      // Add undo action for create
+      addUndoAction({
+        type: 'create',
+        todo: newFloatingTodo
+      });
+      
       // Use closing animation
       setModalClosing(true);
       setTimeout(() => {
@@ -544,7 +1170,7 @@ function App() {
     } catch (error) {
       console.error('Failed to add todo:', error);
     }
-  }, [modalTitle, modalDescription, modalPosition, windowSize, getTodoDimensions, highestZIndex]);
+  }, [modalTitle, modalDescription, modalPosition, windowSize, getTodoDimensions, highestZIndex, addUndoAction]);
 
   const handleModalKeyDown = useCallback((event: React.KeyboardEvent, inputType: 'title' | 'description') => {
     if (event.key === 'Enter') {
@@ -582,8 +1208,16 @@ function App() {
       setSearchClosing(false);
       setSearchQuery('');
       setSearchSelectedTodos(new Set());
-    }, 300);
+    }, 100);
   }, []);
+
+  // Calculate dynamic todo dimensions based on window size (memoized)
+  const todoDimensions = useMemo(() => getTodoDimensions(), [getTodoDimensions]);
+
+  // Memoize sorted todos for consistent z-index rendering
+  const sortedTodos = useMemo(() => {
+    return [...todos].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  }, [todos]);
 
   // Calculate filtered todos based on search query
   const filteredTodos = useMemo(() => {
@@ -608,13 +1242,13 @@ function App() {
     const gridCols = Math.floor((windowSize.width - padding * 2) / (dimensions.width + padding));
     
     filteredTodos.forEach((todo, index) => {
+      const row = Math.floor(index / gridCols);
+      const col = index % gridCols;
+      const x = padding + col * (dimensions.width + padding);
+      const y = startY + row * (dimensions.height + padding);
+      
       if (todo.id) {
-        const col = index % gridCols;
-        const row = Math.floor(index / gridCols);
-        positions.set(todo.id, {
-          x: padding + col * (dimensions.width + padding),
-          y: startY + row * (dimensions.height + padding)
-        });
+        positions.set(todo.id, { x, y });
       }
     });
     
@@ -622,15 +1256,19 @@ function App() {
   }, [filteredTodos, getTodoDimensions, windowSize]);
 
   const handleSearchSubmit = useCallback(() => {
-    if (searchSelectedTodos.size > 0) {
-      // Highlight only selected todos
+    if (searchSelectedTodos.size === 0) {
+      // No selection: select all filtered todos
+      const allFilteredIds = new Set(filteredTodos.map(todo => todo.id).filter(id => id !== undefined) as number[]);
+      setSearchSelectedTodos(allFilteredIds);
+    } else if (searchSelectedTodos.size === filteredTodos.length) {
+      // All selected: highlight them and close search
       setHighlightedTodos(new Set(searchSelectedTodos));
+      closeSearch();
     } else {
-      // Highlight all filtered todos
-      const allFilteredIds = new Set(filteredTodos.map(todo => todo.id).filter(Boolean) as number[]);
-      setHighlightedTodos(allFilteredIds);
+      // Some selected: highlight selected ones and close search
+      setHighlightedTodos(new Set(searchSelectedTodos));
+      closeSearch();
     }
-    closeSearch();
   }, [searchSelectedTodos, filteredTodos, closeSearch]);
 
   const toggleSearchTodoSelection = useCallback((todoId: number) => {
@@ -645,49 +1283,10 @@ function App() {
     });
   }, []);
 
-  // Memoize dimensions for performance
-  const todoDimensions = useMemo(() => getTodoDimensions(), [getTodoDimensions]);
-
-  // Memoize sorted todos for consistent z-index rendering
-  const sortedTodos = useMemo(() => {
-    return [...todos].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-  }, [todos]);
-
-  useEffect(() => {
-    fetchTodos();
-  }, [fetchTodos]);
-
-  // Clear highlights when clicking elsewhere (except during search)
-  const clearHighlights = useCallback(() => {
-    if (!showSearch) {
-      setHighlightedTodos(new Set());
-    }
-  }, [showSearch]);
-
-  // Add event listener for click to clear highlights
-  useEffect(() => {
-    if (showSearch) return; // Don't add listener if search is open
-
-    const handleClick = (event: MouseEvent) => {
-      // Check if click is outside of todos and search
-      const isClickInsideTodos = (event.target as HTMLElement).closest('.floating-todo') !== null;
-      const isClickInsideSearch = (event.target as HTMLElement).closest('.search-bar') !== null;
-      
-      if (!isClickInsideTodos && !isClickInsideSearch) {
-        clearHighlights();
-      }
-    };
-
-    document.addEventListener('click', handleClick);
-    return () => {
-      document.removeEventListener('click', handleClick);
-    };
-  }, [clearHighlights, showSearch]);
-
-  // Add event handlers for search input
   const handleSearchKeyDown = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault();
+      event.stopPropagation();
       handleSearchSubmit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
@@ -723,13 +1322,72 @@ function App() {
     };
   }, [showModal, showSearch, searchQuery, openSearch, closeSearch]);
 
+  // Fetch todos on component mount
+  useEffect(() => {
+    fetchTodos();
+  }, [fetchTodos]);
+
+  // Lasso functionality
+  const handleBackgroundMouseDown = useCallback((event: React.MouseEvent) => {
+    // Only start lasso on right-click (button 2) and not on todos
+    if (event.button !== 2) return; // Only right mouse button
+    if (showModal || showSearch) return;
+    if ((event.target as HTMLElement).closest('.floating-todo')) return;
+    
+    // Clear any existing lasso selection unless shift is held
+    if (!event.shiftKey) {
+      clearLassoSelection();
+    }
+    
+    setIsLassoing(true);
+    setLassoPath([{ x: event.clientX, y: event.clientY }]);
+    
+    event.preventDefault();
+  }, [showModal, showSearch, clearLassoSelection]);
+
   if (loading) {
     return <div className="loading">Loading todos...</div>;
   }
 
   return (
-    <div className="app">
+    <div 
+      className="app"
+      onMouseDown={handleBackgroundMouseDown}
+      onContextMenu={(e) => {
+        // Prevent default context menu when right-clicking for lasso
+        if (!showModal && !showSearch) {
+          e.preventDefault();
+        }
+      }}
+      style={{ position: 'relative' }}
+    >
       <div className="ambient-water-effect"></div>
+      
+      {/* Lasso visual */}
+      {isLassoing && lassoPath.length > 1 && (
+        <svg 
+          className="lasso-overlay" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            pointerEvents: 'none', 
+            zIndex: 10000 
+          }}
+        >
+          <path
+            d={`M ${lassoPath.map(p => `${p.x},${p.y}`).join(' L ')}`}
+            stroke="#4a90e2"
+            strokeWidth="2"
+            strokeDasharray="5,5"
+            fill="rgba(74, 144, 226, 0.1)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
       
       {/* Debug info */}
       {showDebugMode && (
@@ -738,18 +1396,20 @@ function App() {
           <div>Todo size: {todoDimensions.width}x{todoDimensions.height}</div>
           <div>Todos: {todos.length}</div>
           <div>Press D to toggle debug</div>
+          <div>Right-click + drag for lasso selection</div>
         </div>
       )}
       
       {/* Floating Todos */}
       {sortedTodos.map(todo => {
         const isHighlighted = highlightedTodos.has(todo.id || 0);
+        const isLassoed = lassoedTodos.has(todo.id || 0);
         const shouldShowInSearch = showSearch && searchQuery.trim() && filteredTodos.some(ft => ft.id === todo.id);
         
         return (
           <div
             key={todo.id}
-            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''} ${isHighlighted ? 'highlighted' : ''} ${showSearch && !shouldShowInSearch ? 'search-hidden' : ''}`}
+            className={`floating-todo ${todo.completed ? 'completed' : ''} ${selectedTodoId === todo.id ? 'dragging' : ''} ${updatingTodoId === todo.id ? 'updating' : ''} ${isHighlighted ? 'highlighted' : ''} ${isLassoed ? 'lassoed' : ''} ${showSearch && !shouldShowInSearch ? 'search-hidden' : ''}`}
             style={{
               left: todo.position.x,
               top: todo.position.y,
@@ -758,12 +1418,30 @@ function App() {
               zIndex: todo.zIndex || 1000
             }}
             onMouseDown={(e) => handleMouseDown(e, todo)}
+            onDoubleClick={() => handleDoubleClick(todo)}
             onMouseEnter={() => setHoveredTodoId(todo.id || null)}
             onMouseLeave={() => setHoveredTodoId(null)}
             onClick={() => {
               // Clear highlights when clicking a todo outside of search
               if (!showSearch && highlightedTodos.size > 0) {
                 setHighlightedTodos(new Set());
+              }
+              // Handle lasso selection with shift-click
+              if (todo.id && isShiftPressed) {
+                setLassoedTodos(prev => {
+                  const newLassoed = new Set(prev);
+                  if (newLassoed.has(todo.id!)) {
+                    newLassoed.delete(todo.id!); // un-highlight if already selected
+                  } else {
+                    newLassoed.add(todo.id!); // add if not selected
+                  }
+                  return newLassoed;
+                });
+                return;
+              }
+              // Clear lasso selection if clicking a non-lassoed todo without shift
+              if (lassoedTodos.size > 0 && (!todo.id || !lassoedTodos.has(todo.id))) {
+                clearLassoSelection();
               }
             }}
           >
@@ -808,7 +1486,7 @@ function App() {
           <div className="empty-state-content">
             <div className="empty-state-title">Your floating workspace awaits</div>
             <div className="empty-state-subtitle">Press N to create your first floating task</div>
-            <div className="empty-state-hint">Press X to complete • Backspace to delete • Spacebar to search • Press D for debug</div>
+            <div className="empty-state-hint">Press X to complete • Double-click to delete • Spacebar to search • Press D for debug</div>
           </div>
         </div>
       )}
