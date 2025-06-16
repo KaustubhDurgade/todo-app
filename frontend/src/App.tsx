@@ -55,25 +55,6 @@ function App() {
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [initialDragPositions, setInitialDragPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
   
-  // Spaces feature state
-  interface Space {
-    id: string;
-    name: string;
-    color: string;
-    gradient: string;
-  }
-  
-  const defaultSpaces: Space[] = [
-    { id: 'all', name: 'All', color: '#4a90e2', gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-    { id: 'work', name: 'Work', color: '#e74c3c', gradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)' },
-    { id: 'home', name: 'Home', color: '#2ecc71', gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)' },
-    { id: 'school', name: 'School', color: '#f39c12', gradient: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)' },
-  ];
-  
-  const [spaces] = useState<Space[]>(defaultSpaces);
-  const [currentSpace, setCurrentSpace] = useState<string>('all');
-  const [todoSpaces, setTodoSpaces] = useState<Map<number, string>>(new Map()); // Map todo ID to space ID
-  
   // Undo/Redo state
   interface UndoAction {
     type: 'create' | 'delete' | 'toggle';
@@ -155,42 +136,10 @@ function App() {
   }, []);
 
   // Space management functions
-  const assignTodoToSpace = useCallback((todoId: number, spaceId: string) => {
-    setTodoSpaces(prev => {
-      const newMap = new Map(prev);
-      if (spaceId === 'all') {
-        newMap.delete(todoId); // Remove from map if assigning to "all"
-      } else {
-        newMap.set(todoId, spaceId);
-      }
-      
-      // Persist to localStorage
-      const spaceData = Object.fromEntries(newMap);
-      localStorage.setItem('todoSpaces', JSON.stringify(spaceData));
-      
-      return newMap;
-    });
-  }, []);
-
-  // Load space assignments from localStorage on mount
+  // Load any saved state from localStorage on mount
   useEffect(() => {
-    const savedSpaces = localStorage.getItem('todoSpaces');
-    if (savedSpaces) {
-      try {
-        const spaceData = JSON.parse(savedSpaces);
-        setTodoSpaces(new Map(Object.entries(spaceData).map(([k, v]) => [parseInt(k), v as string])));
-      } catch (error) {
-        console.error('Failed to load space assignments:', error);
-      }
-    }
+    // No spaces functionality to load
   }, []);
-
-  const getCurrentSpaceTodos = useCallback(() => {
-    if (currentSpace === 'all') {
-      return todos;
-    }
-    return todos.filter(todo => todo.id && todoSpaces.get(todo.id) === currentSpace);
-  }, [todos, currentSpace, todoSpaces]);
 
   // Undo/Redo helper functions
   const addUndoAction = useCallback((action: UndoAction) => {
@@ -1208,11 +1157,6 @@ function App() {
       setHighestZIndex(prev => prev + 1);
       setTodos(prev => [...prev, newFloatingTodo]);
       
-      // Automatically assign the new todo to the current space (if not "all")
-      if (currentSpace !== 'all' && newTodo.id) {
-        assignTodoToSpace(newTodo.id, currentSpace);
-      }
-      
       // Add undo action for create
       addUndoAction({
         type: 'create',
@@ -1231,7 +1175,7 @@ function App() {
     } catch (error) {
       console.error('Failed to add todo:', error);
     }
-  }, [modalTitle, modalDescription, modalPosition, windowSize, getTodoDimensions, highestZIndex, addUndoAction, currentSpace, assignTodoToSpace]);
+  }, [modalTitle, modalDescription, modalPosition, windowSize, getTodoDimensions, highestZIndex, addUndoAction]);
 
   const handleModalKeyDown = useCallback((event: React.KeyboardEvent, inputType: 'title' | 'description') => {
     if (event.key === 'Enter') {
@@ -1275,19 +1219,10 @@ function App() {
   // Calculate dynamic todo dimensions based on window size (memoized)
   const todoDimensions = useMemo(() => getTodoDimensions(), [getTodoDimensions]);
 
-  // Memoize sorted todos for consistent z-index rendering and space filtering
+  // Memoize sorted todos for consistent z-index rendering
   const sortedTodos = useMemo(() => {
-    let filteredBySpace = todos;
-    
-    // Filter by current space if not "all"
-    if (currentSpace !== 'all') {
-      filteredBySpace = todos.filter(todo => 
-        todo.id && todoSpaces.get(todo.id) === currentSpace
-      );
-    }
-    
-    return [...filteredBySpace].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-  }, [todos, currentSpace, todoSpaces]);
+    return [...todos].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  }, [todos]);
 
   // Calculate filtered todos based on search query
   const filteredTodos = useMemo(() => {
@@ -1433,29 +1368,6 @@ function App() {
     >
       <div className="ambient-water-effect"></div>
       
-      {/* Spaces tabs */}
-      <div className="spaces-container">
-        {spaces.map(space => (
-          <div
-            key={space.id}
-            className={`space-tab ${currentSpace === space.id ? 'active' : ''}`}
-            style={{
-              background: currentSpace === space.id ? space.gradient : 'rgba(255, 255, 255, 0.1)',
-              borderColor: space.color,
-            }}
-            onClick={() => setCurrentSpace(space.id)}
-          >
-            <span className="space-name">{space.name}</span>
-            <span className="space-count">
-              {space.id === 'all' 
-                ? todos.length 
-                : todos.filter(todo => todo.id && todoSpaces.get(todo.id) === space.id).length
-              }
-            </span>
-          </div>
-        ))}
-      </div>
-
       {/* Debug info */}
       {showDebugMode && (
         <div className="debug-info">
@@ -1517,38 +1429,6 @@ function App() {
               {todo.description && (
                 <div className="floating-todo-description">{todo.description}</div>
               )}
-              
-              {/* Space indicator and selector */}
-              <div className="todo-space-indicator">
-                <div 
-                  className="current-space-dot"
-                  style={{ 
-                    backgroundColor: spaces.find(s => s.id === (todoSpaces.get(todo.id!) || 'all'))?.color || '#4a90e2' 
-                  }}
-                ></div>
-                
-                {/* Space selector dropdown (shows on hover) */}
-                <div className="space-selector">
-                  {spaces.map(space => (
-                    <div
-                      key={space.id}
-                      className={`space-option ${(todoSpaces.get(todo.id!) || 'all') === space.id ? 'selected' : ''}`}
-                      style={{ 
-                        background: space.gradient,
-                        borderColor: space.color 
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (todo.id) {
-                          assignTodoToSpace(todo.id, space.id);
-                        }
-                      }}
-                    >
-                      {space.name}
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Glass shimmer effect */}
